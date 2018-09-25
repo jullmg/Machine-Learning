@@ -17,16 +17,17 @@ import tflearn
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.estimator import regression
 import math, random, os
-import matplotlib.pyplot as plt
-import sys
+#import matplotlib.pyplot as plt
+
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_02.log'
-modelsave_name = 'LunarLander_Q_Learning_02-'
-modelload_name = 'LunarLander_Q_Learning_01-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_03.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_03-'
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_01-'
 
-init_pop = False
-pre_train = False
+redef_init_pop = True
+init_pop_games = 100
+pre_train = True
 render = False
 
 optimizer = 'adam'
@@ -39,14 +40,9 @@ nn_dropout = True
 nn_dropout_factor = 0.95
 epochs = 1
 lr = 1e-3
-
-
 N = 10000
 # Importance given to predicted action
 gamma = 0.99
-
-
-
 
 env = gym.make('LunarLander-v2')
 
@@ -57,11 +53,11 @@ except FileNotFoundError:
     logfile = open(logfile_name, 'w')
 
 
-def init_pop():
-    print('Redefining init pop')
+def init_pop(games):
+
     init_pop = []
 
-    for n in range(500):
+    for n in range(games):
         env.reset()
         done = False
 
@@ -125,9 +121,6 @@ class Model:
                 model = create_nn(8)
             self.graphlist.append(graph)
             self.modellist.append(model)
-
-        logfile.write(str(self.modellist[0].get_train_vars()))
-        logfile.write('\n')
 
     def prediction(self, s):
         s = s.reshape(-1, 8, 1)
@@ -203,15 +196,19 @@ def play_one(env, model, eps, gamma):
     return totalreward, iters
 
 
-if init_pop:
-    init_pop()
+if redef_init_pop == True:
+    logfile.write('Redefining init pop for {} games\n'.format(init_pop_games))
+    logfile.flush()
+    init_pop(init_pop_games)
 
 model = Model(env)
 
 if pre_train:
-    training_data = np.load('lunarlander_qlearn_initpop_01')
+    logfile.write('Pre Training with {} random games\n'.format(init_pop_games))
+    logfile.flush()
+    training_data = np.load('lunarlander_qlearn_initpop_01.npy')
     model.train(training_data)
-
+    logfile.write('Training Done')
 totalrewards = np.empty(N)
 costs = np.empty(N)
 
@@ -219,7 +216,8 @@ if nn_dropout:
     logfile.write('Dropout factor: {}\n'.format(nn_dropout_factor))
 else:
     logfile.write('No Dropout\n')
-logfile.write('Epochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
+logfile.write(str(model.modellist[0].get_train_vars()))
+logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
 logfile.write('Optimizer: {}\nLoss Function: {}\n'.format(optimizer, loss_function))
 logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
 
@@ -232,7 +230,7 @@ for n in range(N):
     totalreward, iters = play_one(env, model, eps, gamma)
     totalrewards[n] = totalreward
 
-    if n % 100 == 0:
+    if n > 1 and n % 10 == 0:
         #logfile.write('Saving model' + '\n')
         model.nn_save()
         output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
@@ -243,10 +241,10 @@ for n in range(N):
         break
 
 
-plt.plot(totalrewards)
-plt.title("Rewards")
-plt.show()
-plot_running_avg(totalrewards)
+#plt.plot(totalrewards)
+#plt.title("Rewards")
+#plt.show()
+#plot_running_avg(totalrewards)
 
 logfile.close()
 env.close()
