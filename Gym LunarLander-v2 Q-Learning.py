@@ -3,10 +3,7 @@
 
 To do:
 
-- Fichier log
-- Stats
-- Github
-- Train with init pop
+
 '''
 
 import gym
@@ -16,21 +13,24 @@ import tensorflow as tf
 import tflearn
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.estimator import regression
-import math, random, os
+import time
+import os
+import math
+import random
 #import matplotlib.pyplot as plt
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_03.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_03-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_05.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_05-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_01-'
 
-redef_init_pop = True
-init_pop_games = 100
+redef_init_pop = False
+init_pop_games = 15
 pre_train = True
 render = False
 
-optimizer = 'adam'
+optimizer = 'Adam'
 loss_function = 'mean_square'
 
 nn_layer_1_activation = 'relu'
@@ -45,6 +45,7 @@ N = 10000
 gamma = 0.99
 
 env = gym.make('LunarLander-v2')
+t0 = time.time()
 
 try:
     logfile = open(logfile_name, 'w')
@@ -208,18 +209,20 @@ if pre_train:
     logfile.flush()
     training_data = np.load('lunarlander_qlearn_initpop_01.npy')
     model.train(training_data)
-    logfile.write('Training Done')
+    tx = time.time() - t0
+    logfile.write('Training Done, elapsed time: {}s\n\n'.format(round(tx,2)))
+
 totalrewards = np.empty(N)
 costs = np.empty(N)
 
-if nn_dropout:
-    logfile.write('Dropout factor: {}\n'.format(nn_dropout_factor))
-else:
-    logfile.write('No Dropout\n')
 logfile.write(str(model.modellist[0].get_train_vars()))
 logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
 logfile.write('Optimizer: {}\nLoss Function: {}\n'.format(optimizer, loss_function))
-logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
+logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
+if nn_dropout:
+    logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
+else:
+    logfile.write('No Dropout\n\n')
 
 for n in range(N):
     # Emptying buffer in log file
@@ -233,8 +236,9 @@ for n in range(N):
     if n > 1 and n % 10 == 0:
         #logfile.write('Saving model' + '\n')
         model.nn_save()
+        tx = time.time() - t0
         output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
-        logfile.write(output + '\n\n')
+        logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
 
     # If average totalreward of last 100 games is >=200 stop
     if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
