@@ -2,6 +2,7 @@
 
 
 To do:
+-test different epsilon
 
 
 '''
@@ -21,14 +22,25 @@ import random
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_05.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_05-'
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_01-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_10-'
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
+
+try:
+    logfile = open(logfile_name, 'w')
+except FileNotFoundError:
+    os.mknod(logfile_name)
+    logfile = open(logfile_name, 'w')
+
+
+logfile.write('renormalise epsilon')
 
 redef_init_pop = False
-init_pop_games = 15
+init_pop_games = 20
+
 pre_train = True
-render = False
+load_model = False
+render = True
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -36,9 +48,9 @@ loss_function = 'mean_square'
 nn_layer_1_activation = 'relu'
 nn_layer_2_activation = 'tanh'
 nn_output_activation = 'linear'
-nn_dropout = True
+nn_dropout = False
 nn_dropout_factor = 0.95
-epochs = 1
+epochs = 3
 lr = 1e-3
 N = 10000
 # Importance given to predicted action
@@ -47,11 +59,7 @@ gamma = 0.99
 env = gym.make('LunarLander-v2')
 t0 = time.time()
 
-try:
-    logfile = open(logfile_name, 'w')
-except FileNotFoundError:
-    os.mknod(logfile_name)
-    logfile = open(logfile_name, 'w')
+
 
 
 def init_pop(games):
@@ -93,7 +101,7 @@ def create_nn(input_size):
     network = fully_connected(network, 256, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
-    network = fully_connected(network, 512, activation=nn_layer_2_activation)
+    network = fully_connected(network, 512, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
 
@@ -122,6 +130,9 @@ class Model:
                 model = create_nn(8)
             self.graphlist.append(graph)
             self.modellist.append(model)
+
+        title = './LunarLander_Models/LunarLander_Q_Learning_08-0'
+
 
     def prediction(self, s):
         s = s.reshape(-1, 8, 1)
@@ -154,14 +165,22 @@ class Model:
     def nn_save(self):
         print('Saving model')
         for i in range(env.action_space.n):
-            title = modelsave_name + str(i)
-            self.modellist[i].save(title)
+            graph = tf.Graph()
+            with graph.as_default():
+                title = modelsave_name + str(i)
+                self.modellist[i].save(title)
 
     def nn_load(self):
-        print('Loading model')
+        '''print('Loading model')
         for i in range(env.action_space.n):
             title = modelload_name + str(i)
-            self.modellist[i].load(title)
+            self.modellist[i].load(title)'''
+        for i in range(env.action_space.n):
+            graph = tf.Graph()
+            with graph.as_default():
+                title = modelload_name + str(i)
+                self.modellist[i].load(title)
+
 
     def sample_action(self, s, eps):
         # np.random (0.01-0.99)
@@ -204,13 +223,18 @@ if redef_init_pop == True:
 
 model = Model(env)
 
-if pre_train:
+
+if load_model:
+    model.nn_load()
+
+if pre_train and not load_model:
     logfile.write('Pre Training with {} random games\n'.format(init_pop_games))
     logfile.flush()
     training_data = np.load('lunarlander_qlearn_initpop_01.npy')
     model.train(training_data)
     tx = time.time() - t0
     logfile.write('Training Done, elapsed time: {}s\n\n'.format(round(tx,2)))
+
 
 totalrewards = np.empty(N)
 costs = np.empty(N)
@@ -229,7 +253,9 @@ for n in range(N):
     logfile.flush()
 
     # Le eps diminue a chaque partie (max 1 min 0), c'est la probabilite de choisir une action au hasard
+
     eps = 1.0 / np.sqrt(n + 1)
+    #eps = 1.0 / (n + 1)
     totalreward, iters = play_one(env, model, eps, gamma)
     totalrewards[n] = totalreward
 
@@ -241,8 +267,8 @@ for n in range(N):
         logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
 
     # If average totalreward of last 100 games is >=200 stop
-    if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
-        break
+    #if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
+    #    break
 
 
 #plt.plot(totalrewards)
