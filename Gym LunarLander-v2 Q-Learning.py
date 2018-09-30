@@ -2,7 +2,7 @@
 
 
 To do:
--test different epsilon
+
 
 
 '''
@@ -22,8 +22,8 @@ import random
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_10-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_11.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_11-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
 
 try:
@@ -33,10 +33,10 @@ except FileNotFoundError:
     logfile = open(logfile_name, 'w')
 
 
-logfile.write('renormalise epsilon')
+logfile.write('doubled neural network \n')
 
 redef_init_pop = False
-init_pop_games = 20
+init_pop_games = 25
 
 pre_train = True
 load_model = False
@@ -50,9 +50,11 @@ nn_layer_2_activation = 'tanh'
 nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
-epochs = 3
+epochs = 2
+
 lr = 1e-3
 N = 10000
+eps_factor = 0.3
 # Importance given to predicted action
 gamma = 0.99
 
@@ -98,10 +100,10 @@ def create_nn(input_size):
     network = input_data(shape=[None, input_size, 1], name='input')
 
     # Hidden layers
-    network = fully_connected(network, 256, activation=nn_layer_1_activation)
+    network = fully_connected(network, 512, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
-    network = fully_connected(network, 512, activation=nn_layer_1_activation)
+    network = fully_connected(network, 1024, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
 
@@ -241,7 +243,7 @@ costs = np.empty(N)
 
 logfile.write(str(model.modellist[0].get_train_vars()))
 logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
-logfile.write('Optimizer: {}\nLoss Function: {}\n'.format(optimizer, loss_function))
+logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
 logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
 if nn_dropout:
     logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
@@ -254,7 +256,7 @@ for n in range(N):
 
     # Le eps diminue a chaque partie (max 1 min 0), c'est la probabilite de choisir une action au hasard
 
-    eps = 1.0 / np.sqrt(n + 1)
+    eps = eps_factor / np.sqrt(n + 1)
     #eps = 1.0 / (n + 1)
     totalreward, iters = play_one(env, model, eps, gamma)
     totalrewards[n] = totalreward
