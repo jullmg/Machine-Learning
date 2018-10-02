@@ -3,8 +3,9 @@
 
 To do:
 
-init pop with only good games
-update model after more than one game
+essayer avec moins d'inputs
+essayer avec plus d'actions possibles (ex : -0.5 ou 0.5)
+
 
 '''
 
@@ -21,10 +22,10 @@ import math
 import random
 #import matplotlib.pyplot as plt
 
-
+env = gym.make('BipedalWalker-v2')
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_13.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_13-'
+logfile_name = './BipedalWalker_Logs/BipedalWalker_01.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_11-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
 
 try:
@@ -34,13 +35,13 @@ except FileNotFoundError:
     logfile = open(logfile_name, 'w')
 
 
-logfile.write('back to 256x512, testing with filtered random games (min score 25) \n')
+logfile.write('\n')
 
 redef_init_pop = True
-init_pop_games =10000
-init_pop_goal = 0
+init_pop_games = 25
 
 pre_train = True
+save_model = False
 load_model = False
 render = True
 
@@ -55,38 +56,40 @@ nn_dropout_factor = 0.95
 epochs = 2
 
 lr = 1e-3
-N = 100000
+N = 10000
 eps_factor = 0.3
 # Importance given to predicted action
 gamma = 0.99
 
-env = gym.make('LunarLander-v2')
+num_observations = 24
+num_actions = 8
+
 t0 = time.time()
 
 
 def init_pop(games):
     data = []
-    total_kept_games = 0
-
+    logfile.write('Redifining init pop')
     for n in range(games):
         env.reset()
         done = False
-        total_score = 0
-        game_memory = []
-        while not done:
-            action = np.random.randint(0, env.action_space.n)
-            observation, reward, done, _ = env.step(action)
-            game_memory.append([observation, action, reward])
-            total_score += reward
 
-        if total_score >= init_pop_goal:
-            #print(total_score)
-            data.append(game_memory)
-            total_kept_games += 1
+        while not done:
+            action = [0, 0, 0, 0, 0, 0, 0, 0]
+            action_index = random.randint(0, 7)
+
+            if action_index % 2 == 0:
+                action[action_index] = 1
+            else:
+                action[action_index] = -1
+
+            observation, reward, done, _ = env.step(action)
+            data.append([observation, action_index, reward])
 
     data = np.array(data)
+
     print('saving initpop_01')
-    np.save('lunarlander_qlearn_initpop_01', data)
+    np.save('BipedalWalker_initpop_01', data)
 
 
 def plot_running_avg(totalrewards):
@@ -131,22 +134,20 @@ class Model:
         self.graphlist = []
         self.modellist = []
 
-        for graph in range(env.action_space.n):
+        for graph in range(num_actions):
             graph = tf.Graph()
             with graph.as_default():
-                model = create_nn(8)
+                model = create_nn(num_observations)
             self.graphlist.append(graph)
             self.modellist.append(model)
 
-        title = './LunarLander_Models/LunarLander_Q_Learning_08-0'
-
 
     def prediction(self, s):
-        s = s.reshape(-1, 8, 1)
+        s = s.reshape(-1, len(s), 1)
         predictions = []
 
         # One prediction for each model
-        for i in range(env.action_space.n):
+        for i in range(num_actions):
             prediction = self.modellist[i].predict(s)
             predictions.append(prediction)
 
@@ -159,16 +160,15 @@ class Model:
         self.modellist[action].fit(X, G, n_epoch=epochs)
 
     def train(self, init_pop_data):
-        logfile.write('Training model with {} random games with min {} score.'.format(len(init_pop_data), init_pop_goal))
-        logfile.flush()
-        for game in init_pop_data:
-            for move in game:
-                x = move[0]
-                x = x.reshape(-1, len(x), 1)
-                y = move[2]
-                y = [[y]]
+        print('Training model with init. pop.')
 
-                self.modellist[move[1]].fit(x, y, n_epoch=epochs)
+        for s in init_pop_data:
+            x = s[0]
+            x = x.reshape(-1, len(x), 1)
+            y = s[2]
+            y = [[y]]
+
+            self.modellist[s[1]].fit(x, y, n_epoch=epochs)
 
     def nn_save(self):
         print('Saving model')
@@ -195,7 +195,7 @@ class Model:
         if np.random.random() < eps:
             return self.env.action_space.sample()
         else:
-            return  np.argmax(model.prediction(s))
+            return int(np.argmax(model.prediction(s)))
 
 
 def play_one(env, model, eps, gamma):
@@ -204,22 +204,59 @@ def play_one(env, model, eps, gamma):
     totalreward = 0
     iters = 0
 
+
     while not done:
         action = model.sample_action(observation, eps)
         prev_observation = observation
-        observation, reward, done, info = env.step(action)
+        action_converted = []
+        print(action)
 
-        if render == True:
+        if type(action) == int:
+
+            if action == 0:
+                action_converted = [1, 0, 0, 0]
+
+            elif action == 1:
+                action_converted = [-1, 0, 0, 0]
+
+            elif action == 2:
+                action_converted = [0, 1, 0, 0]
+
+            elif action == 3:
+                action_converted = [0, -1, 0, 0]
+
+            elif action == 4:
+                action_converted = [0, 0, 1, 0]
+
+            elif action == 5:
+                action_converted = [0, 0, -1, 0]
+
+            elif action == 6:
+                action_converted = [0, 0, 0, 1]
+
+            elif action == 7:
+                action_converted = [0, 0, 0, -1]
+
+            observation, reward, done, info = env.step(action_converted)
+            prev_observation = observation
+            next = model.prediction(observation)
+            # G est eleve si le reward l'est aussi si la prediction etait avec confiance
+            G = reward + gamma * np.max(next)
+            model.update(prev_observation, action, G)
+
+        else:
+            observation, reward, done, info = env.step(action)
+
+
+
+        if render:
             env.render()
 
-        next = model.prediction(observation)
-        # G est eleve si le reward l'est aussi si la prediction etait avec confiance
-        G = reward + gamma * np.max(next)
-        model.update(prev_observation, action, G)
+
+
         totalreward += reward
         iters += 1
 
-    logfile.write('Last game total reward: {}\n'.format(totalreward))
     return totalreward, iters
 
 
@@ -235,8 +272,9 @@ if load_model:
     model.nn_load()
 
 if pre_train and not load_model:
-
-    training_data = np.load('lunarlander_qlearn_initpop_01.npy')
+    logfile.write('Pre Training with {} random games\n'.format(init_pop_games))
+    logfile.flush()
+    training_data = np.load('BipedalWalker_initpop_01.npy')
     model.train(training_data)
     tx = time.time() - t0
     logfile.write('Training Done, elapsed time: {}s\n\n'.format(round(tx,2)))
@@ -261,13 +299,13 @@ for n in range(N):
     # Le eps diminue a chaque partie (max 1 min 0), c'est la probabilite de choisir une action au hasard
 
     eps = eps_factor / np.sqrt(n + 1)
-    #eps = 1.0 / (n + 1)
     totalreward, iters = play_one(env, model, eps, gamma)
     totalrewards[n] = totalreward
 
     if n > 1 and n % 10 == 0:
         #logfile.write('Saving model' + '\n')
-        model.nn_save()
+        if save_model:
+            model.nn_save()
         tx = time.time() - t0
         output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
         logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
