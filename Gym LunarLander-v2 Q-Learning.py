@@ -23,8 +23,8 @@ import random
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_13.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_13-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_14.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_14-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
 
 try:
@@ -34,15 +34,16 @@ except FileNotFoundError:
     logfile = open(logfile_name, 'w')
 
 
-logfile.write('back to 256x512, testing with filtered random games (min score 25) \n')
+logfile.write('Testing training steps\n')
 
 redef_init_pop = True
-init_pop_games =10000
-init_pop_goal = 0
+init_pop_games = 1000
+init_pop_goal = -100
 
 pre_train = True
 load_model = False
-render = True
+save_model = False
+render = False
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -53,6 +54,8 @@ nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 2
+batch = 20
+train_step = 1
 
 lr = 1e-3
 N = 100000
@@ -81,7 +84,8 @@ def init_pop(games):
 
         if total_score >= init_pop_goal:
             #print(total_score)
-            data.append(game_memory)
+            for step in game_memory:
+                data.append(step)
             total_kept_games += 1
 
     data = np.array(data)
@@ -158,9 +162,25 @@ class Model:
 
         self.modellist[action].fit(X, G, n_epoch=epochs)
 
-    def train(self, init_pop_data):
-        logfile.write('Training model with {} random games with min {} score.'.format(len(init_pop_data), init_pop_goal))
+    def train(self, data):
+        #logfile.write('Training model with {} steps from random games with min {} score.'.format(len(data), init_pop_goal))
         logfile.flush()
+
+        x = [[], [], [], []]
+        y = [[], [], [], []]
+
+
+        for step in data:
+            x[step[1]].append(step[0])
+            y[step[1]].append([step[2]])
+
+        for n in range(len(x)):
+            if len(x[n]) > 0:
+                x[n] = np.array(x[n])
+                x[n] = x[n].reshape(-1, 8, 1)
+                self.modellist[n].fit(x[n], y[n], n_epoch=epochs, batch_size=batch)
+
+        '''
         for game in init_pop_data:
             for move in game:
                 x = move[0]
@@ -169,6 +189,7 @@ class Model:
                 y = [[y]]
 
                 self.modellist[move[1]].fit(x, y, n_epoch=epochs)
+        '''
 
     def nn_save(self):
         print('Saving model')
@@ -203,6 +224,7 @@ def play_one(env, model, eps, gamma):
     done = False
     totalreward = 0
     iters = 0
+    game_memory = []
 
     while not done:
         action = model.sample_action(observation, eps)
@@ -215,9 +237,18 @@ def play_one(env, model, eps, gamma):
         next = model.prediction(observation)
         # G est eleve si le reward l'est aussi si la prediction etait avec confiance
         G = reward + gamma * np.max(next)
-        model.update(prev_observation, action, G)
+        game_memory.append([prev_observation, action, G])
+        #model.update(prev_observation, action, G)
         totalreward += reward
         iters += 1
+
+        if len(game_memory) >= train_step:
+            model.train(game_memory)
+            game_memory = []
+
+
+    print('retrain')
+
 
     logfile.write('Last game total reward: {}\n'.format(totalreward))
     return totalreward, iters
@@ -246,7 +277,7 @@ totalrewards = np.empty(N)
 costs = np.empty(N)
 
 logfile.write(str(model.modellist[0].get_train_vars()))
-logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
+logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nTrain Steps: {}\nBatch Size: {}'.format(epochs, gamma, lr, train_step, batch))
 logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
 logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
 if nn_dropout:
@@ -266,11 +297,15 @@ for n in range(N):
     totalrewards[n] = totalreward
 
     if n > 1 and n % 10 == 0:
-        #logfile.write('Saving model' + '\n')
-        model.nn_save()
+        if save_model:
+            model.nn_save()
+        train_step += 1
+
         tx = time.time() - t0
         output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
         logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
+
+
 
     # If average totalreward of last 100 games is >=200 stop
     #if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
