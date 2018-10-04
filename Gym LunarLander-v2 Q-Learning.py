@@ -3,8 +3,7 @@
 
 To do:
 
-init pop with only good games
-update model after more than one game
+change gamma to 0.95
 
 '''
 
@@ -23,8 +22,8 @@ import random
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_14.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_14-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_16.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_16-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
 
 try:
@@ -34,16 +33,16 @@ except FileNotFoundError:
     logfile = open(logfile_name, 'w')
 
 
-logfile.write('Testing training steps\n')
+logfile.write('\n')
 
-redef_init_pop = True
-init_pop_games = 1000
-init_pop_goal = -100
+redef_init_pop = False
+init_pop_games = 10000
+init_pop_goal = 0
 
 pre_train = True
 load_model = False
 save_model = False
-render = False
+render = True
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -54,12 +53,13 @@ nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 2
-batch = 20
+batch = 5
 train_step = 1
+game_timeout = 1000
 
 lr = 1e-3
 N = 100000
-eps_factor = 0.3
+eps_factor = 0.5
 # Importance given to predicted action
 gamma = 0.99
 
@@ -163,12 +163,8 @@ class Model:
         self.modellist[action].fit(X, G, n_epoch=epochs)
 
     def train(self, data):
-        #logfile.write('Training model with {} steps from random games with min {} score.'.format(len(data), init_pop_goal))
-        logfile.flush()
-
         x = [[], [], [], []]
         y = [[], [], [], []]
-
 
         for step in data:
             x[step[1]].append(step[0])
@@ -179,17 +175,6 @@ class Model:
                 x[n] = np.array(x[n])
                 x[n] = x[n].reshape(-1, 8, 1)
                 self.modellist[n].fit(x[n], y[n], n_epoch=epochs, batch_size=batch)
-
-        '''
-        for game in init_pop_data:
-            for move in game:
-                x = move[0]
-                x = x.reshape(-1, len(x), 1)
-                y = move[2]
-                y = [[y]]
-
-                self.modellist[move[1]].fit(x, y, n_epoch=epochs)
-        '''
 
     def nn_save(self):
         print('Saving model')
@@ -226,7 +211,8 @@ def play_one(env, model, eps, gamma):
     iters = 0
     game_memory = []
 
-    while not done:
+    #while not done:
+    for g in range(game_timeout):
         action = model.sample_action(observation, eps)
         prev_observation = observation
         observation, reward, done, info = env.step(action)
@@ -238,21 +224,18 @@ def play_one(env, model, eps, gamma):
         # G est eleve si le reward l'est aussi si la prediction etait avec confiance
         G = reward + gamma * np.max(next)
         game_memory.append([prev_observation, action, G])
-        #model.update(prev_observation, action, G)
+        model.update(prev_observation, action, G)
         totalreward += reward
         iters += 1
+        #if len(game_memory) > train_step:
+         #   model.train(game_memory)
+          #  game_memory = []
 
-        if len(game_memory) >= train_step:
-            model.train(game_memory)
-            game_memory = []
-
-
-    print('retrain')
-
+        if done:
+            break
 
     logfile.write('Last game total reward: {}\n'.format(totalreward))
     return totalreward, iters
-
 
 if redef_init_pop == True:
     logfile.write('Redefining init pop for {} games\n'.format(init_pop_games))
@@ -261,24 +244,23 @@ if redef_init_pop == True:
 
 model = Model(env)
 
-
 if load_model:
     model.nn_load()
 
 if pre_train and not load_model:
-
     training_data = np.load('lunarlander_qlearn_initpop_01.npy')
+    logfile.write('Training model with {} steps from random games with min {} score.'.format(len(training_data), init_pop_goal))
+    logfile.flush()
     model.train(training_data)
     tx = time.time() - t0
     logfile.write('Training Done, elapsed time: {}s\n\n'.format(round(tx,2)))
-
 
 totalrewards = np.empty(N)
 costs = np.empty(N)
 
 logfile.write(str(model.modellist[0].get_train_vars()))
-logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nTrain Steps: {}\nBatch Size: {}'.format(epochs, gamma, lr, train_step, batch))
-logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
+logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nTrain Steps: {}\nBatch Size: {}\n'.format(epochs, gamma, lr, train_step, batch))
+logfile.write('Game Timeout: {}\n Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(game_timeout, eps_factor, optimizer, loss_function))
 logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
 if nn_dropout:
     logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
@@ -299,13 +281,14 @@ for n in range(N):
     if n > 1 and n % 10 == 0:
         if save_model:
             model.nn_save()
-        train_step += 1
+
+
+        if n > 1 and n % 100 == 0 and train_step < 3 :
+            train_step += 1
 
         tx = time.time() - t0
         output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
         logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
-
-
 
     # If average totalreward of last 100 games is >=200 stop
     #if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
