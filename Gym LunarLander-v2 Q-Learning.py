@@ -1,7 +1,7 @@
 '''
 
 
-To do:
+To do :
 
 change gamma to 0.95
 
