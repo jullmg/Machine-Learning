@@ -1,8 +1,24 @@
 '''
+STATES :
+
+    (pos.x - VIEWPORT_W/SCALE/2) / (VIEWPORT_W/SCALE/2),
+            (pos.y - (self.helipad_y+LEG_DOWN/SCALE)) / (VIEWPORT_H/SCALE/2),
+            vel.x*(VIEWPORT_W/SCALE/2)/FPS,
+            vel.y*(VIEWPORT_H/SCALE/2)/FPS,
+            self.lander.angle,
+            20.0*self.lander.angularVelocity/FPS,
+            1.0 if self.legs[0].ground_contact else 0.0,
+            1.0 if self.legs[1].ground_contact else 0.0
+
+Actions :
+
+        op, fire left engine, main engine, right engine
 
 
 To do :
 
+changer neural network architecthure
+try logic that action is taken only if positive reward
 change gamma to 0.95
 
 '''
@@ -22,18 +38,20 @@ import random
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_16.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_16-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_23.log'
+debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_17-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
 
 try:
     logfile = open(logfile_name, 'w')
+    debugfile = open(debug_name, 'w')
 except FileNotFoundError:
-    os.mknod(logfile_name)
-    logfile = open(logfile_name, 'w')
+    os.mknod(FileNotFoundError.filename)
+    logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('\n')
+logfile.write('Omega + epsilon 0.3 avec decay 0.995 enleve q valuie\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -54,14 +72,19 @@ nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 2
 batch = 5
-train_step = 1
-game_timeout = 1000
+train_step = 5
+game_timeout = 3000
 
 lr = 1e-3
 N = 100000
-eps_factor = 0.5
-# Importance given to predicted action
+eps = 0.3
+min_eps = 0.01
+eps_factor = 1 # only if using formula from original script
 gamma = 0.99
+
+omega = -3
+omega_limit = 0
+omegadd = 0.005
 
 env = gym.make('LunarLander-v2')
 t0 = time.time()
@@ -138,7 +161,7 @@ class Model:
         for graph in range(env.action_space.n):
             graph = tf.Graph()
             with graph.as_default():
-                model = create_nn(8)
+                model = create_nn(env.observation_space.shape[0])
             self.graphlist.append(graph)
             self.modellist.append(model)
 
@@ -206,35 +229,56 @@ class Model:
 
 def play_one(env, model, eps, gamma):
     observation = env.reset()
+    prev_observation = [0, 0]
     done = False
     totalreward = 0
     iters = 0
     game_memory = []
 
-    #while not done:
-    for g in range(game_timeout):
-        action = model.sample_action(observation, eps)
+    while not done:
+
+        rounded_prev_obs = round(prev_observation[1], 4)
+        rounded_obs = round(observation[1], 4)
+        craft_angle = observation[4]
+
+        #if len(prev_observation) > 0 and rounded_prev_obs == rounded_obs and abs(craft_angle) < 0.1:
+        if observation[6] == 1 and observation[7] == 1 and abs(craft_angle) < 0.35:
+            action = 0
+        else:
+            action = model.sample_action(observation, eps)
+
         prev_observation = observation
+
+        #debugfile.write('{} - {}\n'.format(rounded_prev_obs, rounded_obs))
+        #debugfile.write('Angle: {}\n'.format(observation[4]))
+
         observation, reward, done, info = env.step(action)
 
         if render == True:
             env.render()
 
         next = model.prediction(observation)
-        # G est eleve si le reward l'est aussi si la prediction etait avec confiance
         G = reward + gamma * np.max(next)
-        game_memory.append([prev_observation, action, G])
+        #game_memory.append([prev_observation, action, G])
         model.update(prev_observation, action, G)
         totalreward += reward
         iters += 1
+
         #if len(game_memory) > train_step:
          #   model.train(game_memory)
           #  game_memory = []
 
+        #debugfile.write('Act: {} Pred : {} rew : {} eps : {}\n'.format(np.argmax(prediction), round(prediction_max, 2), round(reward, 2), round(eps, 2)))
+        debugfile.flush()
+
         if done:
             break
 
-    logfile.write('Last game total reward: {}\n'.format(totalreward))
+    if len(game_memory) > 0:
+        model.train(game_memory)
+
+    game_memory = []
+    logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
     return totalreward, iters
 
 if redef_init_pop == True:
@@ -260,7 +304,7 @@ costs = np.empty(N)
 
 logfile.write(str(model.modellist[0].get_train_vars()))
 logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nTrain Steps: {}\nBatch Size: {}\n'.format(epochs, gamma, lr, train_step, batch))
-logfile.write('Game Timeout: {}\n Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(game_timeout, eps_factor, optimizer, loss_function))
+logfile.write('Game Timeout: {}\nEpsilon: {}\nMin Eps: {}\nOptimizer: {}\nLoss Function: {}\n'.format(game_timeout, eps, min_eps, optimizer, loss_function))
 logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
 if nn_dropout:
     logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
@@ -271,12 +315,17 @@ for n in range(N):
     # Emptying buffer in log file
     logfile.flush()
 
-    # Le eps diminue a chaque partie (max 1 min 0), c'est la probabilite de choisir une action au hasard
 
-    eps = eps_factor / np.sqrt(n + 1)
-    #eps = 1.0 / (n + 1)
+    if eps > min_eps:
+        #eps = eps * 0.995
+        eps = eps_factor / np.sqrt(n + 1)
+
     totalreward, iters = play_one(env, model, eps, gamma)
     totalrewards[n] = totalreward
+
+
+    if omega < omega_limit:
+        omega = omega + omegadd
 
     if n > 1 and n % 10 == 0:
         if save_model:

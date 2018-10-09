@@ -2,7 +2,7 @@
 
 
 To do:
-
+double neurones
 essayer avec moins d'inputs
 essayer avec plus d'actions possibles (ex : -0.5 ou 0.5)
 
@@ -24,7 +24,7 @@ import random
 
 env = gym.make('BipedalWalker-v2')
 # Pre-flight parameters
-logfile_name = './BipedalWalker_Logs/BipedalWalker_01.log'
+logfile_name = './BipedalWalker_Logs/BipedalWalker_04.log'
 modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_11-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
 
@@ -35,12 +35,13 @@ except FileNotFoundError:
     logfile = open(logfile_name, 'w')
 
 
-logfile.write('\n')
+logfile.write('tripled neurones\n')
 
-redef_init_pop = True
-init_pop_games = 35
+redef_init_pop = False
+init_pop_games = 50
+init_pop_target = -999
 
-pre_train = True
+pre_train = False
 save_model = False
 load_model = False
 render = False
@@ -61,21 +62,43 @@ eps_factor = 1
 # Importance given to predicted action
 gamma = 0.99
 
-observations_retained_indices = [2,4,5,6,7,8,9,10,11,12]
+observations_retained_indices = [0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 num_observations = len(observations_retained_indices)
 num_actions = 8
+game_timeout = 1650
+init_timeout = 300
 
 t0 = time.time()
 
+'''
+            self.hull.angle,        # Normal angles up to 0.5 here, but sure more is possible.
+            2.0*self.hull.angularVelocity/FPS,
+            0.3*vel.x*(VIEWPORT_W/SCALE)/FPS,  # Normalized to get -1..1 range
+            0.3*vel.y*(VIEWPORT_H/SCALE)/FPS,
+            self.joints[0].angle,   # This will give 1.1 on high up, but it's still OK (and there should be spikes on hiting the ground, that's normal too)
+            self.joints[0].speed / SPEED_HIP,
+            self.joints[1].angle + 1.0,
+            self.joints[1].speed / SPEED_KNEE,
+            1.0 if self.legs[1].ground_contact else 0.0,
+            self.joints[2].angle,
+            self.joints[2].speed / SPEED_HIP,
+            self.joints[3].angle + 1.0,
+            self.joints[3].speed / SPEED_KNEE,
+            1.0 if self.legs[3].ground_contact else 0.0
+'''
+
 
 def init_pop(games):
-    data = []
+    kept_data = []
 
     for n in range(games):
-        env.reset()
+        observation = env.reset()
         done = False
+        game_data = []
+        game_score = 0
 
-        while not done:
+        for i in range(init_timeout):
+            previous_observation = observation
             action = [0, 0, 0, 0, 0, 0, 0, 0]
             action_index = random.randint(0, 7)
 
@@ -85,12 +108,18 @@ def init_pop(games):
                 action[action_index] = -1
 
             observation, reward, done, _ = env.step(action)
-            data.append([observation, action_index, reward])
+            game_data.append([previous_observation, action_index, reward])
+            game_score += reward
 
-    data = np.array(data)
+            if done:
+                break
 
-    print('saving initpop_01')
-    np.save('BipedalWalker_initpop_01', data)
+        if game_score >= init_pop_target:
+            for s in game_data:
+                kept_data.append(s)
+
+    kept_data = np.array(kept_data)
+    np.save('BipedalWalker_initpop_01', kept_data)
 
 
 def plot_running_avg(totalrewards):
@@ -112,10 +141,11 @@ def create_nn(input_size):
     network = fully_connected(network, 256, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
+
     network = fully_connected(network, 512, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
-
+    network = fully_connected(network, 256, activation=nn_layer_2_activation)
     # Output layer
     network = fully_connected(network, 1, activation=nn_output_activation)
 
@@ -142,7 +172,6 @@ class Model:
             self.graphlist.append(graph)
             self.modellist.append(model)
 
-
     def prediction(self, s):
         s = list(s[observations_retained_indices])
         s = np.array(s)
@@ -166,11 +195,11 @@ class Model:
         self.modellist[action].fit(X, G, n_epoch=epochs)
 
     def train(self, init_pop_data):
-        print('Training model with init. pop.')
+        logfile.write('Training model with {} steps from init. pop min value {}.'.format(len(init_pop_data), init_pop_target))
+        logfile.flush()
 
         for s in init_pop_data:
             x = s[0]
-
             x = list(x[observations_retained_indices])
             x = np.array(x)
             x = x.reshape(-1, len(x), 1)
@@ -199,11 +228,10 @@ class Model:
                 title = modelload_name + str(i)
                 self.modellist[i].load(title)
 
-
     def sample_action(self, s, eps):
         # np.random (0.01-0.99)
         if np.random.random() < eps:
-            return self.env.action_space.sample()
+            return random.randint(0, 7)
         else:
             return int(np.argmax(model.prediction(s)))
 
@@ -214,53 +242,50 @@ def play_one(env, model, eps, gamma):
     totalreward = 0
     iters = 0
 
-
-    while not done:
+    for g in range(game_timeout):
         action = model.sample_action(observation, eps)
+        print(action)
         prev_observation = observation
         action_converted = []
 
-        if type(action) == int:
+        if action == 0:
+            action_converted = [1, 0, 0, 0]
 
-            if action == 0:
-                action_converted = [1, 0, 0, 0]
+        elif action == 1:
+            action_converted = [-1, 0, 0, 0]
 
-            elif action == 1:
-                action_converted = [-1, 0, 0, 0]
+        elif action == 2:
+            action_converted = [0, 1, 0, 0]
 
-            elif action == 2:
-                action_converted = [0, 1, 0, 0]
+        elif action == 3:
+            action_converted = [0, -1, 0, 0]
 
-            elif action == 3:
-                action_converted = [0, -1, 0, 0]
+        elif action == 4:
+            action_converted = [0, 0, 1, 0]
 
-            elif action == 4:
-                action_converted = [0, 0, 1, 0]
+        elif action == 5:
+            action_converted = [0, 0, -1, 0]
 
-            elif action == 5:
-                action_converted = [0, 0, -1, 0]
+        elif action == 6:
+            action_converted = [0, 0, 0, 1]
 
-            elif action == 6:
-                action_converted = [0, 0, 0, 1]
+        elif action == 7:
+            action_converted = [0, 0, 0, -1]
 
-            elif action == 7:
-                action_converted = [0, 0, 0, -1]
-
-            observation, reward, done, info = env.step(action_converted)
-            prev_observation = observation
-            next = model.prediction(observation)
-            # G est eleve si le reward l'est aussi si la prediction etait avec confiance
-            G = reward + gamma * np.max(next)
-            model.update(prev_observation, action, G)
-
-        else:
-            observation, reward, done, info = env.step(action)
+        observation, reward, done, info = env.step(action_converted)
+        next = model.prediction(observation)
+        # G est eleve si le reward l'est aussi si la prediction etait avec confiance
+        G = reward + gamma * np.max(next)
+        model.update(prev_observation, action, G)
 
         if render:
             env.render()
 
         totalreward += reward
         iters += 1
+
+        if done:
+            break
 
     logfile.write('Last game total reward: {}\n'.format(totalreward))
     return totalreward, iters
@@ -289,8 +314,6 @@ if load_model:
     model.nn_load()
 
 if pre_train and not load_model:
-    logfile.write('Pre Training with {} random games\n'.format(init_pop_games))
-    logfile.flush()
     training_data = np.load('BipedalWalker_initpop_01.npy')
     model.train(training_data)
     tx = time.time() - t0
@@ -304,7 +327,18 @@ log_parameters()
 for n in range(N):
     logfile.flush()
 
-    eps = eps_factor / np.sqrt(n + 1)
+    eps = 0.5
+
+    if n > 200:
+        eps = 0.4
+    elif n > 400:
+        eps = 0.3
+    elif n > 700:
+        eps = 0.2
+    elif n > 1000:
+        eps = 0.1
+
+
     totalreward, iters = play_one(env, model, eps, gamma)
 
     totalrewards[n] = totalreward
