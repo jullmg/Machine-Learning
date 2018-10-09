@@ -10,7 +10,9 @@ STATES :
             1.0 if self.legs[0].ground_contact else 0.0,
             1.0 if self.legs[1].ground_contact else 0.0
 
+Actions :
 
+        op, fire left engine, main engine, right engine
 
 
 To do:
@@ -36,7 +38,7 @@ import random
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_19.log'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_23.log'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_17-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
@@ -49,7 +51,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('plain 0 omega, and 0 gamma\n')
+logfile.write('Omega + epsilon 0.3 avec decay 0.995 enleve q valuie\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -70,17 +72,18 @@ nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 2
 batch = 5
-train_step = 4
+train_step = 5
 game_timeout = 3000
 
 lr = 1e-3
 N = 100000
 eps = 0.3
-eps_factor = 0.3 # only if using formula from original script
+min_eps = 0.01
+eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-omega = 0
-omega_limit = 10
+omega = -3
+omega_limit = 0
 omegadd = 0.005
 
 env = gym.make('LunarLander-v2')
@@ -233,27 +236,21 @@ def play_one(env, model, eps, gamma):
     game_memory = []
 
     while not done:
-    #for g in range(game_timeout):
 
         rounded_prev_obs = round(prev_observation[1], 4)
         rounded_obs = round(observation[1], 4)
+        craft_angle = observation[4]
 
-        if len(prev_observation) > 0 and  rounded_prev_obs == rounded_obs:
+        #if len(prev_observation) > 0 and rounded_prev_obs == rounded_obs and abs(craft_angle) < 0.1:
+        if observation[6] == 1 and observation[7] == 1 and abs(craft_angle) < 0.35:
             action = 0
         else:
-            #action = model.sample_action(observation, eps)
-            action = model.prediction(observation)
+            action = model.sample_action(observation, eps)
 
         prev_observation = observation
+
         #debugfile.write('{} - {}\n'.format(rounded_prev_obs, rounded_obs))
-
-
-        if np.max(action) >= omega:
-            action = model.sample_action(observation, eps)
-            #action = np.argmax(action)
-        else:
-            action = env.action_space.sample()
-
+        #debugfile.write('Angle: {}\n'.format(observation[4]))
 
         observation, reward, done, info = env.step(action)
 
@@ -270,15 +267,15 @@ def play_one(env, model, eps, gamma):
         #if len(game_memory) > train_step:
          #   model.train(game_memory)
           #  game_memory = []
-        debugfile.write('reward : {}  totalreward : {}\n'.format(reward, totalreward))
+
+        #debugfile.write('Act: {} Pred : {} rew : {} eps : {}\n'.format(np.argmax(prediction), round(prediction_max, 2), round(reward, 2), round(eps, 2)))
         debugfile.flush()
 
         if done:
             break
 
-
-    #if len(game_memory) > 0:
-       # model.train(game_memory)
+    if len(game_memory) > 0:
+        model.train(game_memory)
 
     game_memory = []
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
@@ -307,7 +304,7 @@ costs = np.empty(N)
 
 logfile.write(str(model.modellist[0].get_train_vars()))
 logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nTrain Steps: {}\nBatch Size: {}\n'.format(epochs, gamma, lr, train_step, batch))
-logfile.write('Game Timeout: {}\n Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(game_timeout, eps, optimizer, loss_function))
+logfile.write('Game Timeout: {}\nEpsilon: {}\nMin Eps: {}\nOptimizer: {}\nLoss Function: {}\n'.format(game_timeout, eps, min_eps, optimizer, loss_function))
 logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
 if nn_dropout:
     logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
@@ -319,7 +316,7 @@ for n in range(N):
     logfile.flush()
 
 
-    if eps > 0.1:
+    if eps > min_eps:
         #eps = eps * 0.995
         eps = eps_factor / np.sqrt(n + 1)
 
