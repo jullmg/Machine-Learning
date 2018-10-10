@@ -54,7 +54,7 @@ init_pop_goal = 0
 pre_train = False
 load_model = False
 save_model = False
-render = True
+render = False
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -65,17 +65,18 @@ nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 2
-batch = 5
+batch = 64
 train_step = 5
 game_timeout = 3000
 
 lr = 1e-3
 N = 100000
-eps = 0.3
-min_eps = 0.01
+eps = 1
+eps_min = 0.01
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
+batch_size = 4
 memory = deque(maxlen=5000)
 
 env = gym.make('LunarLander-v2')
@@ -185,7 +186,8 @@ class Model:
             y[step[1]].append([step[2]])
 
         for n in range(len(x)):
-            if len(x[n]) > 0:
+            if len(x[n]) > 0
+
                 x[n] = np.array(x[n])
                 x[n] = x[n].reshape(-1, 8, 1)
                 self.modellist[n].fit(x[n], y[n], n_epoch=epochs, batch_size=batch)
@@ -219,52 +221,47 @@ class Model:
 
 
 def play_one(env, model, eps, gamma):
-    observation = env.reset()
-    prev_observation = [0, 0]
+    state = env.reset()
     done = False
     totalreward = 0
-    iters = 0
-    game_memory = []
 
     while not done:
-
         '''
         if observation[6] == 1 and observation[7] == 1 and abs(craft_angle) < 0.35:
             action = 0
         else:
             action = model.sample_action(observation, eps)
         '''
-        action = model.sample_action(observation, eps)
-        prev_observation = observation
 
-        observation, reward, done, info = env.step(action)
+        action = model.sample_action(state, eps)
 
-        if render == True:
-            env.render()
-
-        next = model.prediction(observation)
-        G = reward + gamma * np.max(next)
-        memory.append([prev_observation, action, G])
-        model.update(prev_observation, action, G)
+        next_state, reward, done, info = env.step(action)
         totalreward += reward
-        iters += 1
 
-        #if len(game_memory) > train_step:
-         #   model.train(game_memory)
-          #  game_memory = []
+        memory.append((state, action, reward, next_state, done))
+        state = next_state
+
+        if len(memory) > batch_size:
+
+            minibatch = random.sample(memory, batch_size)
+
+            for state, action, reward, next_state, done_memory in minibatch:
+
+                target = reward
+
+                if not done_memory:
+                    target = reward + gamma * np.max(model.prediction(next_state)) # use np.amax?
+
+                model.update(state, action, target)
 
         #debugfile.write('Act: {} Pred : {} rew : {} eps : {}\n'.format(np.argmax(prediction), round(prediction_max, 2), round(reward, 2), round(eps, 2)))
         debugfile.flush()
 
-        if done:
-            break
+        if render == True:
+            env.render()
 
-    if len(game_memory) > 0:
-        model.train(game_memory)
-
-    game_memory = []
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
-    return totalreward, iters
+    return totalreward
 
 if redef_init_pop == True:
     logfile.write('Redefining init pop for {} games\n'.format(init_pop_games))
@@ -307,11 +304,11 @@ log_parameters()
 for n in range(N):
     logfile.flush()
 
-    if eps > min_eps:
-        #eps = eps * 0.995
-        eps = eps_factor / np.sqrt(n + 1)
+    if eps > eps_min:
+        eps *= 0.995
+        #eps = eps_factor / np.sqrt(n + 1)
 
-    totalreward, iters = play_one(env, model, eps, gamma)
+    totalreward = play_one(env, model, eps, gamma)
     totalrewards[n] = totalreward
 
     if n > 1 and n % 10 == 0:
