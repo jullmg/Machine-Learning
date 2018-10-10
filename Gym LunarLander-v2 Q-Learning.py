@@ -14,13 +14,6 @@ Actions :
 
         op, fire left engine, main engine, right engine
 
-
-To do :
-
-changer neural network architecthure
-try logic that action is taken only if positive reward
-change gamma to 0.95
-
 '''
 
 import gym
@@ -34,6 +27,7 @@ import time
 import os
 import math
 import random
+from collections import deque
 #import matplotlib.pyplot as plt
 
 
@@ -51,13 +45,13 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('Omega + epsilon 0.3 avec decay 0.995 enleve q valuie\n')
+logfile.write('\n')
 
 redef_init_pop = False
 init_pop_games = 10000
 init_pop_goal = 0
 
-pre_train = True
+pre_train = False
 load_model = False
 save_model = False
 render = True
@@ -82,13 +76,10 @@ min_eps = 0.01
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-omega = -3
-omega_limit = 0
-omegadd = 0.005
+memory = deque(maxlen=5000)
 
 env = gym.make('LunarLander-v2')
 t0 = time.time()
-
 
 def init_pop(games):
     data = []
@@ -237,20 +228,14 @@ def play_one(env, model, eps, gamma):
 
     while not done:
 
-        rounded_prev_obs = round(prev_observation[1], 4)
-        rounded_obs = round(observation[1], 4)
-        craft_angle = observation[4]
-
-        #if len(prev_observation) > 0 and rounded_prev_obs == rounded_obs and abs(craft_angle) < 0.1:
+        '''
         if observation[6] == 1 and observation[7] == 1 and abs(craft_angle) < 0.35:
             action = 0
         else:
             action = model.sample_action(observation, eps)
-
+        '''
+        action = model.sample_action(observation, eps)
         prev_observation = observation
-
-        #debugfile.write('{} - {}\n'.format(rounded_prev_obs, rounded_obs))
-        #debugfile.write('Angle: {}\n'.format(observation[4]))
 
         observation, reward, done, info = env.step(action)
 
@@ -259,7 +244,7 @@ def play_one(env, model, eps, gamma):
 
         next = model.prediction(observation)
         G = reward + gamma * np.max(next)
-        #game_memory.append([prev_observation, action, G])
+        memory.append([prev_observation, action, G])
         model.update(prev_observation, action, G)
         totalreward += reward
         iters += 1
@@ -302,19 +287,25 @@ if pre_train and not load_model:
 totalrewards = np.empty(N)
 costs = np.empty(N)
 
-logfile.write(str(model.modellist[0].get_train_vars()))
-logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nTrain Steps: {}\nBatch Size: {}\n'.format(epochs, gamma, lr, train_step, batch))
-logfile.write('Game Timeout: {}\nEpsilon: {}\nMin Eps: {}\nOptimizer: {}\nLoss Function: {}\n'.format(game_timeout, eps, min_eps, optimizer, loss_function))
-logfile.write('Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation, nn_layer_2_activation, nn_output_activation))
-if nn_dropout:
-    logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
-else:
-    logfile.write('No Dropout\n\n')
+def log_parameters():
+    logfile.write(str(model.modellist[0].get_train_vars()))
+    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
+    logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
+    logfile.write(
+        'Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation,
+                                                                                         nn_layer_2_activation,
+                                                                                         nn_output_activation))
+    if nn_dropout:
+        logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
+    else:
+        logfile.write('No Dropout\n\n')
 
-for n in range(N):
-    # Emptying buffer in log file
     logfile.flush()
 
+log_parameters()
+
+for n in range(N):
+    logfile.flush()
 
     if eps > min_eps:
         #eps = eps * 0.995
@@ -322,10 +313,6 @@ for n in range(N):
 
     totalreward, iters = play_one(env, model, eps, gamma)
     totalrewards[n] = totalreward
-
-
-    if omega < omega_limit:
-        omega = omega + omegadd
 
     if n > 1 and n % 10 == 0:
         if save_model:
@@ -350,4 +337,5 @@ for n in range(N):
 #plot_running_avg(totalrewards)
 
 logfile.close()
+debugfile.close()
 env.close()
