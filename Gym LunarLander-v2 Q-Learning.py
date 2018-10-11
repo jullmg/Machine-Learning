@@ -54,7 +54,7 @@ init_pop_goal = 0
 pre_train = False
 load_model = False
 save_model = False
-render = False
+render = True
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -64,7 +64,7 @@ nn_layer_2_activation = 'tanh'
 nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
-epochs = 2
+epochs = 1
 batch = 64
 train_step = 5
 game_timeout = 3000
@@ -72,12 +72,12 @@ game_timeout = 3000
 lr = 1e-3
 N = 100000
 eps = 1
-eps_min = 0.01
+eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-batch_size = 4
-memory = deque(maxlen=5000)
+batch_size = 5
+memory = deque(maxlen=10000)
 
 env = gym.make('LunarLander-v2')
 t0 = time.time()
@@ -127,12 +127,12 @@ def create_nn(input_size):
     network = fully_connected(network, 256, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
-    network = fully_connected(network, 512, activation=nn_layer_1_activation)
+    network = fully_connected(network, 512, activation=nn_layer_2_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
 
     # Output layer
-    network = fully_connected(network, 1, activation=nn_output_activation)
+    network = fully_connected(network, 4, activation=nn_output_activation)
 
     network = regression(network, optimizer=optimizer, learning_rate=lr, loss=loss_function, name='targets')
 
@@ -146,51 +146,43 @@ class Model:
     def __init__(self, env):
         self.env = env
 
-        # Creating as much models as there are actions
-        self.graphlist = []
-        self.modellist = []
-
-        for graph in range(env.action_space.n):
-            graph = tf.Graph()
-            with graph.as_default():
-                model = create_nn(env.observation_space.shape[0])
-            self.graphlist.append(graph)
-            self.modellist.append(model)
-
+        self.model = create_nn(env.observation_space.shape[0])
         title = './LunarLander_Models/LunarLander_Q_Learning_08-0'
-
 
     def prediction(self, s):
         s = s.reshape(-1, 8, 1)
-        predictions = []
+        prediction = self.model.predict(s)
 
-        # One prediction for each model
-        for i in range(env.action_space.n):
-            prediction = self.modellist[i].predict(s)
-            predictions.append(prediction)
-
-        return predictions
+        return prediction
 
     def update(self, observation, action, G):
         X = observation.reshape(-1, len(observation), 1)
         G = [[G]]
 
-        self.modellist[action].fit(X, G, n_epoch=epochs)
+        self.model.fit(X, G, n_epoch=epochs)
 
     def train(self, data):
-        x = [[], [], [], []]
-        y = [[], [], [], []]
+        x = []
+        y = []
 
-        for step in data:
-            x[step[1]].append(step[0])
-            y[step[1]].append([step[2]])
+        for state, action, reward, next_state, done in data:
+            x.append(state)
+            target = reward
 
-        for n in range(len(x)):
-            if len(x[n]) > 0
+            if not done:
+                target = reward + gamma * np.max(model.prediction(next_state))  # use np.amax?
 
-                x[n] = np.array(x[n])
-                x[n] = x[n].reshape(-1, 8, 1)
-                self.modellist[n].fit(x[n], y[n], n_epoch=epochs, batch_size=batch)
+            target_f = model.prediction(state)
+            target_f[0][action] = target
+
+            y.append(target_f)
+
+        x = np.array(x)
+        x = x.reshape(-1, 8, 1)
+        y = np.array(y)
+        y = y.reshape(-1, 4)
+
+        self.model.fit(x, y, n_epoch=epochs, batch_size=batch)
 
     def nn_save(self):
         print('Saving model')
@@ -198,7 +190,7 @@ class Model:
             graph = tf.Graph()
             with graph.as_default():
                 title = modelsave_name + str(i)
-                self.modellist[i].save(title)
+                self.model.save(title)
 
     def nn_load(self):
         '''print('Loading model')
@@ -209,7 +201,7 @@ class Model:
             graph = tf.Graph()
             with graph.as_default():
                 title = modelload_name + str(i)
-                self.modellist[i].load(title)
+                self.model.load(title)
 
 
     def sample_action(self, s, eps):
@@ -233,7 +225,10 @@ def play_one(env, model, eps, gamma):
             action = model.sample_action(observation, eps)
         '''
 
-        action = model.sample_action(state, eps)
+        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
+            action = 0
+        else:
+            action = model.sample_action(state, eps)
 
         next_state, reward, done, info = env.step(action)
         totalreward += reward
@@ -242,19 +237,10 @@ def play_one(env, model, eps, gamma):
         state = next_state
 
         if len(memory) > batch_size:
-
             minibatch = random.sample(memory, batch_size)
+            model.train(minibatch)
 
-            for state, action, reward, next_state, done_memory in minibatch:
-
-                target = reward
-
-                if not done_memory:
-                    target = reward + gamma * np.max(model.prediction(next_state)) # use np.amax?
-
-                model.update(state, action, target)
-
-        #debugfile.write('Act: {} Pred : {} rew : {} eps : {}\n'.format(np.argmax(prediction), round(prediction_max, 2), round(reward, 2), round(eps, 2)))
+        debugfile.write('Act: {} rew : {} eps : {}\n'.format(action, round(reward, 2), round(eps, 2)))
         debugfile.flush()
 
         if render == True:
@@ -285,7 +271,7 @@ totalrewards = np.empty(N)
 costs = np.empty(N)
 
 def log_parameters():
-    logfile.write(str(model.modellist[0].get_train_vars()))
+    logfile.write(str(model.model.get_train_vars()))
     logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
     logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
     logfile.write(
@@ -309,6 +295,7 @@ for n in range(N):
         #eps = eps_factor / np.sqrt(n + 1)
 
     totalreward = play_one(env, model, eps, gamma)
+    debugfile.write('{}\n'.format(len(memory)))
     totalrewards[n] = totalreward
 
     if n > 1 and n % 10 == 0:
