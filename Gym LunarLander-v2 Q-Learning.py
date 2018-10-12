@@ -32,7 +32,7 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_23.log'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_25.log'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_17-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
@@ -45,7 +45,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('\n')
+logfile.write('divise par 2 le network\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -124,10 +124,10 @@ def create_nn(input_size):
     network = input_data(shape=[None, input_size, 1], name='input')
 
     # Hidden layers
-    network = fully_connected(network, 256, activation=nn_layer_1_activation)
+    network = fully_connected(network, 128, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
-    network = fully_connected(network, 512, activation=nn_layer_2_activation)
+    network = fully_connected(network, 256, activation=nn_layer_2_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
 
@@ -219,17 +219,14 @@ def play_one(env, model, eps, gamma):
 
     while not done:
         '''
-        if observation[6] == 1 and observation[7] == 1 and abs(craft_angle) < 0.35:
-            action = 0
-        else:
-            action = model.sample_action(observation, eps)
-        '''
-
+        
         if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
             action = 0
         else:
             action = model.sample_action(state, eps)
+            '''
 
+        action = model.sample_action(state, eps)
         next_state, reward, done, info = env.step(action)
         totalreward += reward
 
