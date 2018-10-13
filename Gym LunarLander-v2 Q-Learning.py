@@ -32,10 +32,10 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_28.log'
-debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_17-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_01.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_01'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
+debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
     logfile = open(logfile_name, 'w')
@@ -53,7 +53,7 @@ init_pop_goal = 0
 
 pre_train = False
 load_model = False
-save_model = False
+save_model = True
 render = False
 
 optimizer = 'Adam'
@@ -76,7 +76,7 @@ eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-batch_size = 10
+minibatch_size = 10
 memory = deque(maxlen=30000)
 
 env = gym.make('LunarLander-v2')
@@ -185,12 +185,8 @@ class Model:
         self.model.fit(x, y, n_epoch=epochs, batch_size=batch)
 
     def nn_save(self):
-        print('Saving model')
-        for i in range(env.action_space.n):
-            graph = tf.Graph()
-            with graph.as_default():
-                title = modelsave_name + str(i)
-                self.model.save(title)
+        title = modelsave_name + str(i)
+        self.model.save(modelsave_name)
 
     def nn_load(self):
         '''print('Loading model')
@@ -266,7 +262,7 @@ costs = np.empty(N)
 
 def log_parameters():
     logfile.write(str(model.model.get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
+    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n MiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
     logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
     logfile.write(
         'Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation,
