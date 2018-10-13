@@ -32,10 +32,10 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_23.log'
-debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_17-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_01.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_01'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
+debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
     logfile = open(logfile_name, 'w')
@@ -45,7 +45,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('\n')
+logfile.write('augmente les mini batch a 20\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -53,8 +53,8 @@ init_pop_goal = 0
 
 pre_train = False
 load_model = False
-save_model = False
-render = True
+save_model = True
+render = False
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -64,19 +64,20 @@ nn_layer_2_activation = 'tanh'
 nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
-epochs = 2
-batch = 5
+epochs = 1
+batch = 64
 train_step = 5
 game_timeout = 3000
 
 lr = 1e-3
 N = 100000
-eps = 0.3
-min_eps = 0.01
+eps = 1
+eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-memory = deque(maxlen=5000)
+minibatch_size = 10
+memory = deque(maxlen=30000)
 
 env = gym.make('LunarLander-v2')
 t0 = time.time()
@@ -123,15 +124,15 @@ def create_nn(input_size):
     network = input_data(shape=[None, input_size, 1], name='input')
 
     # Hidden layers
-    network = fully_connected(network, 256, activation=nn_layer_1_activation)
+    network = fully_connected(network, 128, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
-    network = fully_connected(network, 512, activation=nn_layer_1_activation)
+    network = fully_connected(network, 256, activation=nn_layer_2_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
 
     # Output layer
-    network = fully_connected(network, 1, activation=nn_output_activation)
+    network = fully_connected(network, 4, activation=nn_output_activation)
 
     network = regression(network, optimizer=optimizer, learning_rate=lr, loss=loss_function, name='targets')
 
@@ -145,58 +146,47 @@ class Model:
     def __init__(self, env):
         self.env = env
 
-        # Creating as much models as there are actions
-        self.graphlist = []
-        self.modellist = []
-
-        for graph in range(env.action_space.n):
-            graph = tf.Graph()
-            with graph.as_default():
-                model = create_nn(env.observation_space.shape[0])
-            self.graphlist.append(graph)
-            self.modellist.append(model)
-
+        self.model = create_nn(env.observation_space.shape[0])
         title = './LunarLander_Models/LunarLander_Q_Learning_08-0'
-
 
     def prediction(self, s):
         s = s.reshape(-1, 8, 1)
-        predictions = []
+        prediction = self.model.predict(s)
 
-        # One prediction for each model
-        for i in range(env.action_space.n):
-            prediction = self.modellist[i].predict(s)
-            predictions.append(prediction)
-
-        return predictions
+        return prediction
 
     def update(self, observation, action, G):
         X = observation.reshape(-1, len(observation), 1)
         G = [[G]]
 
-        self.modellist[action].fit(X, G, n_epoch=epochs)
+        self.model.fit(X, G, n_epoch=epochs)
 
     def train(self, data):
-        x = [[], [], [], []]
-        y = [[], [], [], []]
+        x = []
+        y = []
 
-        for step in data:
-            x[step[1]].append(step[0])
-            y[step[1]].append([step[2]])
+        for state, action, reward, next_state, done in data:
+            x.append(state)
+            target = reward
 
-        for n in range(len(x)):
-            if len(x[n]) > 0:
-                x[n] = np.array(x[n])
-                x[n] = x[n].reshape(-1, 8, 1)
-                self.modellist[n].fit(x[n], y[n], n_epoch=epochs, batch_size=batch)
+            if not done:
+                target = reward + gamma * np.max(model.prediction(next_state))  # use np.amax?
+
+            target_f = model.prediction(state)
+            target_f[0][action] = target
+
+            y.append(target_f)
+
+        x = np.array(x)
+        x = x.reshape(-1, 8, 1)
+        y = np.array(y)
+        y = y.reshape(-1, 4)
+
+        self.model.fit(x, y, n_epoch=epochs, batch_size=batch)
 
     def nn_save(self):
-        print('Saving model')
-        for i in range(env.action_space.n):
-            graph = tf.Graph()
-            with graph.as_default():
-                title = modelsave_name + str(i)
-                self.modellist[i].save(title)
+        title = modelsave_name + str(i)
+        self.model.save(modelsave_name)
 
     def nn_load(self):
         '''print('Loading model')
@@ -207,7 +197,7 @@ class Model:
             graph = tf.Graph()
             with graph.as_default():
                 title = modelload_name + str(i)
-                self.modellist[i].load(title)
+                self.model.load(title)
 
 
     def sample_action(self, s, eps):
@@ -219,52 +209,35 @@ class Model:
 
 
 def play_one(env, model, eps, gamma):
-    observation = env.reset()
-    prev_observation = [0, 0]
+    state = env.reset()
     done = False
     totalreward = 0
-    iters = 0
-    game_memory = []
 
     while not done:
 
-        '''
-        if observation[6] == 1 and observation[7] == 1 and abs(craft_angle) < 0.35:
+        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
             action = 0
         else:
-            action = model.sample_action(observation, eps)
-        '''
-        action = model.sample_action(observation, eps)
-        prev_observation = observation
+            action = model.sample_action(state, eps)
 
-        observation, reward, done, info = env.step(action)
+        next_state, reward, done, info = env.step(action)
+        totalreward += reward
+
+        memory.append((state, action, reward, next_state, done))
+        state = next_state
+
+        if len(memory) > batch_size:
+            minibatch = random.sample(memory, batch_size)
+            model.train(minibatch)
+
+        debugfile.write('Act: {} rew : {} eps : {}\n'.format(action, round(reward, 2), round(eps, 2)))
+        debugfile.flush()
 
         if render == True:
             env.render()
 
-        next = model.prediction(observation)
-        G = reward + gamma * np.max(next)
-        memory.append([prev_observation, action, G])
-        model.update(prev_observation, action, G)
-        totalreward += reward
-        iters += 1
-
-        #if len(game_memory) > train_step:
-         #   model.train(game_memory)
-          #  game_memory = []
-
-        #debugfile.write('Act: {} Pred : {} rew : {} eps : {}\n'.format(np.argmax(prediction), round(prediction_max, 2), round(reward, 2), round(eps, 2)))
-        debugfile.flush()
-
-        if done:
-            break
-
-    if len(game_memory) > 0:
-        model.train(game_memory)
-
-    game_memory = []
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
-    return totalreward, iters
+    return totalreward
 
 if redef_init_pop == True:
     logfile.write('Redefining init pop for {} games\n'.format(init_pop_games))
@@ -288,8 +261,8 @@ totalrewards = np.empty(N)
 costs = np.empty(N)
 
 def log_parameters():
-    logfile.write(str(model.modellist[0].get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n'.format(epochs, gamma, lr))
+    logfile.write(str(model.model.get_train_vars()))
+    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n MiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
     logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
     logfile.write(
         'Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation,
@@ -307,11 +280,12 @@ log_parameters()
 for n in range(N):
     logfile.flush()
 
-    if eps > min_eps:
-        #eps = eps * 0.995
-        eps = eps_factor / np.sqrt(n + 1)
+    if eps > eps_min:
+        eps *= 0.995
+        #eps = eps_factor / np.sqrt(n + 1)
 
-    totalreward, iters = play_one(env, model, eps, gamma)
+    totalreward = play_one(env, model, eps, gamma)
+    debugfile.write('{}\n'.format(len(memory)))
     totalrewards[n] = totalreward
 
     if n > 1 and n % 10 == 0:
