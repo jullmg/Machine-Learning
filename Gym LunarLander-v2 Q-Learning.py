@@ -32,7 +32,7 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_25.log'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_28.log'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_17-'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
@@ -45,7 +45,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('divise par 2 le network\n')
+logfile.write('augmente les mini batch a 20\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -54,7 +54,7 @@ init_pop_goal = 0
 pre_train = False
 load_model = False
 save_model = False
-render = True
+render = False
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -76,8 +76,8 @@ eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-batch_size = 5
-memory = deque(maxlen=10000)
+batch_size = 10
+memory = deque(maxlen=30000)
 
 env = gym.make('LunarLander-v2')
 t0 = time.time()
@@ -218,15 +218,12 @@ def play_one(env, model, eps, gamma):
     totalreward = 0
 
     while not done:
-        '''
-        
+
         if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
             action = 0
         else:
             action = model.sample_action(state, eps)
-            '''
 
-        action = model.sample_action(state, eps)
         next_state, reward, done, info = env.step(action)
         totalreward += reward
 
