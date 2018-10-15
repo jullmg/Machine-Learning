@@ -14,6 +14,11 @@ Actions :
 
         op, fire left engine, main engine, right engine
 
+To do :
+Plot graphs
+Integrate Combined Experience Replay (CER)
+Integrade Priorized Experience Replay (PER)
+
 '''
 
 import gym
@@ -32,8 +37,8 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_01.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_01'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_06.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_06'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
@@ -45,7 +50,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('augmente les mini batch a 20\n')
+logfile.write('retour a 512 mais avec activation tanh\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -59,7 +64,7 @@ render = False
 optimizer = 'Adam'
 loss_function = 'mean_square'
 
-nn_layer_1_activation = 'relu'
+nn_layer_1_activation = 'tanh'
 nn_layer_2_activation = 'tanh'
 nn_output_activation = 'linear'
 nn_dropout = False
@@ -76,8 +81,9 @@ eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-minibatch_size = 10
-memory = deque(maxlen=30000)
+# 20 semble optimal
+minibatch_size = 20
+memory = deque(maxlen=500000)
 
 env = gym.make('LunarLander-v2')
 t0 = time.time()
@@ -124,12 +130,12 @@ def create_nn(input_size):
     network = input_data(shape=[None, input_size, 1], name='input')
 
     # Hidden layers
-    network = fully_connected(network, 128, activation=nn_layer_1_activation)
+    network = fully_connected(network, 512, activation=nn_layer_1_activation)
     if nn_dropout:
         network = dropout(network, nn_dropout_factor)
-    network = fully_connected(network, 256, activation=nn_layer_2_activation)
-    if nn_dropout:
-        network = dropout(network, nn_dropout_factor)
+    #network = fully_connected(network, 256, activation=nn_layer_2_activation)
+    #if nn_dropout:
+    #    network = dropout(network, nn_dropout_factor)
 
     # Output layer
     network = fully_connected(network, 4, activation=nn_output_activation)
@@ -185,7 +191,7 @@ class Model:
         self.model.fit(x, y, n_epoch=epochs, batch_size=batch)
 
     def nn_save(self):
-        title = modelsave_name + str(i)
+        title = modelsave_name
         self.model.save(modelsave_name)
 
     def nn_load(self):
@@ -226,12 +232,12 @@ def play_one(env, model, eps, gamma):
         memory.append((state, action, reward, next_state, done))
         state = next_state
 
-        if len(memory) > batch_size:
-            minibatch = random.sample(memory, batch_size)
+        if len(memory) > minibatch_size:
+            minibatch = random.sample(memory, minibatch_size)
             model.train(minibatch)
 
-        debugfile.write('Act: {} rew : {} eps : {}\n'.format(action, round(reward, 2), round(eps, 2)))
-        debugfile.flush()
+        #debugfile.write('Act: {} rew : {} eps : {}\n'.format(action, round(reward, 2), round(eps, 2)))
+        #debugfile.flush()
 
         if render == True:
             env.render()
