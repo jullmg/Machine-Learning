@@ -18,6 +18,8 @@ To do :
 Plot graphs
 Integrate Combined Experience Replay (CER)
 Integrade Priorized Experience Replay (PER)
+Integrate dual deep network
+Train steps?
 
 '''
 
@@ -37,9 +39,9 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_06.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_06'
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_07.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_07'
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_04'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
@@ -50,28 +52,29 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('retour a 512 mais avec activation tanh\n')
+logfile.write('avec la formule eps d\'origine\n')
 
 redef_init_pop = False
 init_pop_games = 10000
 init_pop_goal = 0
 
 pre_train = False
-load_model = False
 save_model = True
+load_model = False
+replay_model = False
+replay_count = 1000
 render = False
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
 
-nn_layer_1_activation = 'tanh'
+nn_layer_1_activation = 'relu'
 nn_layer_2_activation = 'tanh'
 nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 1
 batch = 64
-train_step = 5
 game_timeout = 3000
 
 lr = 1e-3
@@ -191,20 +194,10 @@ class Model:
         self.model.fit(x, y, n_epoch=epochs, batch_size=batch)
 
     def nn_save(self):
-        title = modelsave_name
         self.model.save(modelsave_name)
 
     def nn_load(self):
-        '''print('Loading model')
-        for i in range(env.action_space.n):
-            title = modelload_name + str(i)
-            self.modellist[i].load(title)'''
-        for i in range(env.action_space.n):
-            graph = tf.Graph()
-            with graph.as_default():
-                title = modelload_name + str(i)
-                self.model.load(title)
-
+        self.model.load(modelload_name)
 
     def sample_action(self, s, eps):
         # np.random (0.01-0.99)
@@ -245,6 +238,31 @@ def play_one(env, model, eps, gamma):
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
     return totalreward
 
+def replay(model, num):
+    totalrewards = np.empty(replay_count)
+
+    for game in range(num):
+        observation = env.reset()
+        game_score = 0
+        done = False
+
+        while not done:
+            if observation[6] == 1 and observation[7] == 1 and observation[4] < 0.1:
+                action = 0
+            else:
+                action = model.prediction(observation)
+
+            observation, reward, done, info = env.step(np.argmax(action))
+            game_score += reward
+            env.render()
+
+        print('total game score: {}'.format(game_score))
+        totalrewards[game] = game_score
+        if game % 10 == 0 and game > 0:
+            output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
+            print(output)
+
+
 if redef_init_pop == True:
     logfile.write('Redefining init pop for {} games\n'.format(init_pop_games))
     logfile.flush()
@@ -254,6 +272,10 @@ model = Model(env)
 
 if load_model:
     model.nn_load()
+
+    if replay_model:
+        replay(model, replay_count)
+        exit()
 
 if pre_train and not load_model:
     training_data = np.load('lunarlander_qlearn_initpop_01.npy')
@@ -286,9 +308,9 @@ log_parameters()
 for n in range(N):
     logfile.flush()
 
-    if eps > eps_min:
-        eps *= 0.995
-        #eps = eps_factor / np.sqrt(n + 1)
+    if eps > 0:
+        #eps *= 0.995
+        eps = eps_factor / np.sqrt(n + 1)
 
     totalreward = play_one(env, model, eps, gamma)
     debugfile.write('{}\n'.format(len(memory)))
@@ -297,10 +319,6 @@ for n in range(N):
     if n > 1 and n % 10 == 0:
         if save_model:
             model.nn_save()
-
-
-        if n > 1 and n % 100 == 0 and train_step < 3 :
-            train_step += 1
 
         tx = time.time() - t0
         output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
