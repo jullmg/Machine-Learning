@@ -89,6 +89,8 @@ minibatch_size = 20
 memory = deque(maxlen=500000)
 
 env = gym.make('LunarLander-v2')
+input_size = env.observation_space.shape[0]
+output_size = env.action_space.n
 t0 = time.time()
 
 def init_pop(games):
@@ -127,28 +129,40 @@ def plot_running_avg(totalrewards):
     plt.show()
 
 
-def create_nn(input_size):
+# def create_nn(input_size):
+#
+#     # Input layer
+#     network = input_data(shape=[None, input_size, 1], name='input')
+#
+#     # Hidden layers
+#     network = fully_connected(network, 512, activation=nn_layer_1_activation)
+#     if nn_dropout:
+#         network = dropout(network, nn_dropout_factor)
+#     #network = fully_connected(network, 256, activation=nn_layer_2_activation)
+#     #if nn_dropout:
+#     #    network = dropout(network, nn_dropout_factor)
+#
+#     # Output layer
+#     network = fully_connected(network, 4, activation=nn_output_activation)
+#
+#     network = regression(network, optimizer=optimizer, learning_rate=lr, loss=loss_function, name='targets')
+#
+#     # On definie le model
+#     model = tflearn.DNN(network)
+#
+#     return model
 
-    # Input layer
-    network = input_data(shape=[None, input_size, 1], name='input')
+class dqnetwork(input_size):
+    def __init__(self, name):
+        self.name = name
 
-    # Hidden layers
-    network = fully_connected(network, 512, activation=nn_layer_1_activation)
-    if nn_dropout:
-        network = dropout(network, nn_dropout_factor)
-    #network = fully_connected(network, 256, activation=nn_layer_2_activation)
-    #if nn_dropout:
-    #    network = dropout(network, nn_dropout_factor)
+        with tf.variable_scope(self.name):
+            self.inputs = tf.placeholder(tf.float32, name="inputs")
 
-    # Output layer
-    network = fully_connected(network, 4, activation=nn_output_activation)
+            self.hiddenlayer1 = tf.layers.dense(self.inputs, 512)
 
-    network = regression(network, optimizer=optimizer, learning_rate=lr, loss=loss_function, name='targets')
+            self.outputs = tf.layers.dense(self.hiddenlayer1, output_size )
 
-    # On definie le model
-    model = tflearn.DNN(network)
-
-    return model
 
 
 class Model:
