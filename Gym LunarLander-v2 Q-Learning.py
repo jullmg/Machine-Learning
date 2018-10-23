@@ -152,18 +152,55 @@ def plot_running_avg(totalrewards):
 #
 #     return model
 
-class dqnetwork(input_size):
+class DQNet:
     def __init__(self, name):
         self.name = name
 
         with tf.variable_scope(self.name):
-            self.inputs = tf.placeholder(tf.float32, name="inputs")
+            self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
 
-            self.hiddenlayer1 = tf.layers.dense(self.inputs, 512)
+            self.rewards = tf.placeholder(tf.float32, [None], name="rewards")
+
+            self.hiddenlayer1 = tf.layers.dense(self.inputs, 512, activation=tf.nn.relu)
 
             self.outputs = tf.layers.dense(self.hiddenlayer1, output_size )
 
+            self.loss = tf.squared_difference(self.outputs, self.rewards)
 
+            self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
+
+# Reset the graph
+tf.reset_default_graph()
+
+dqnetwork = DQNet(name='modele')
+
+x = np.zeros((1, 8), dtype=np.float32)
+
+for i in range(len(x[0])):
+    x[0][i] = np.random.uniform(0.001, 5.0)
+
+
+for i in x[0]:
+    i = 3.14 * pow(i, 2)
+    y.append(i)
+
+
+
+# Prediction
+with tf.Session() as sess:
+    # Initialize the variables
+    sess.run(tf.global_variables_initializer())
+
+    for i in range(1000):
+
+        prediction = sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: x})
+        print(prediction)
+
+        sess.run(dqnetwork.optimizer, feed_dict={dqnetwork.inputs: x, dqnetwork.rewards: y})
+
+
+
+exit()
 
 class Model:
     def __init__(self, env):
