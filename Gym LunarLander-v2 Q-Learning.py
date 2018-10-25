@@ -59,7 +59,7 @@ init_pop_games = 10000
 init_pop_goal = 0
 
 pre_train = False
-save_model = True
+save_model = False
 load_model = False
 replay_model = False
 replay_count = 1000
@@ -80,6 +80,7 @@ game_timeout = 3000
 lr = 1e-3
 N = 100000
 eps = 1
+eps_decay = 0.995
 eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
@@ -128,38 +129,15 @@ def plot_running_avg(totalrewards):
     plt.title("Running Average")
     plt.show()
 
-
-# def create_nn(input_size):
-#
-#     # Input layer
-#     network = input_data(shape=[None, input_size, 1], name='input')
-#
-#     # Hidden layers
-#     network = fully_connected(network, 512, activation=nn_layer_1_activation)
-#     if nn_dropout:
-#         network = dropout(network, nn_dropout_factor)
-#     #network = fully_connected(network, 256, activation=nn_layer_2_activation)
-#     #if nn_dropout:
-#     #    network = dropout(network, nn_dropout_factor)
-#
-#     # Output layer
-#     network = fully_connected(network, 4, activation=nn_output_activation)
-#
-#     network = regression(network, optimizer=optimizer, learning_rate=lr, loss=loss_function, name='targets')
-#
-#     # On definie le model
-#     model = tflearn.DNN(network)
-#
-#     return model
-
 class DQNet:
-    def __init__(self, name):
+    def __init__(self, name, env=None):
         self.name = name
+        self.env = env
 
         with tf.variable_scope(self.name):
             self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
 
-            self.rewards = tf.placeholder(tf.float32, [None], name="rewards")
+            self.rewards = tf.placeholder(tf.float32, [None, output_size], name="rewards")
 
             self.hiddenlayer1 = tf.layers.dense(self.inputs, 512, activation=tf.nn.relu)
 
@@ -169,13 +147,79 @@ class DQNet:
 
             self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
 
+    def predict(self, observation):
+        prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
+        return prediction
+
+    def train(self, data):
+        x = []
+        y = []
+
+        for state, action, reward, next_state, done in data:
+            target = reward
+
+            next_state = np.array(next_state).reshape(-1, 8)
+            state = np.array(next_state).reshape(-1, 8)
+
+            if not done:
+                target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
+
+            target_f = self.predict(state)
+
+            target_f[0][action] = target
+
+            sess.run(self.optimizer, feed_dict={self.inputs: state, self.rewards: target_f})
+
+
+    def sample_action(self, s, eps):
+        # np.random (0.01-0.99)
+        if np.random.random() < eps:
+            return self.env.action_space.sample()
+        else:
+            s = np.array(s).reshape(-1, 8)
+            return  np.argmax(self.predict(s))
+
+
 # Reset the graph
 tf.reset_default_graph()
 
-dqnetwork = DQNet(name='modele')
+# Instantiate DQNetwork
+dqnetwork = DQNet(name='dqnetwork', env=env)
 
-x = np.zeros((1, 8), dtype=np.float32)
 
+def play_one(env, model, eps, gamma):
+    state = env.reset()
+    done = False
+    totalreward = 0
+
+    while not done:
+
+        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
+            action = 0
+        else:
+            action = dqnetwork.sample_action(state, eps)
+
+        next_state, reward, done, info = env.step(action)
+        totalreward += reward
+
+        memory.append((state, action, reward, next_state, done))
+        state = next_state
+
+        if len(memory) > minibatch_size:
+            minibatch = random.sample(memory, minibatch_size)
+            dqnetwork.train(minibatch)
+
+        #debugfile.write('Act: {} rew : {} eps : {}\n'.format(action, round(reward, 2), round(eps, 2)))
+        #debugfile.flush()
+
+        if render == True:
+            env.render()
+
+    logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
+    return totalreward
+
+
+'''
 for i in range(len(x[0])):
     x[0][i] = np.random.uniform(0.001, 5.0)
 
@@ -198,9 +242,7 @@ with tf.Session() as sess:
 
         sess.run(dqnetwork.optimizer, feed_dict={dqnetwork.inputs: x, dqnetwork.rewards: y})
 
-
-
-exit()
+'''
 
 class Model:
     def __init__(self, env):
@@ -209,17 +251,6 @@ class Model:
         self.model = create_nn(env.observation_space.shape[0])
         title = './LunarLander_Models/LunarLander_Q_Learning_08-0'
 
-    def prediction(self, s):
-        s = s.reshape(-1, 8, 1)
-        prediction = self.model.predict(s)
-
-        return prediction
-
-    def update(self, observation, action, G):
-        X = observation.reshape(-1, len(observation), 1)
-        G = [[G]]
-
-        self.model.fit(X, G, n_epoch=epochs)
 
     def train(self, data):
         x = []
@@ -257,38 +288,6 @@ class Model:
         else:
             return  np.argmax(model.prediction(s))
 
-
-def play_one(env, model, eps, gamma):
-    state = env.reset()
-    done = False
-    totalreward = 0
-
-    while not done:
-
-        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
-            action = 0
-        else:
-            action = model.sample_action(state, eps)
-
-        next_state, reward, done, info = env.step(action)
-        totalreward += reward
-
-        memory.append((state, action, reward, next_state, done))
-        state = next_state
-
-        if len(memory) > minibatch_size:
-            minibatch = random.sample(memory, minibatch_size)
-            model.train(minibatch)
-
-        #debugfile.write('Act: {} rew : {} eps : {}\n'.format(action, round(reward, 2), round(eps, 2)))
-        #debugfile.flush()
-
-        if render == True:
-            env.render()
-
-    logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
-    return totalreward
-
 def replay(model, num):
     totalrewards = np.empty(replay_count)
 
@@ -313,13 +312,10 @@ def replay(model, num):
             output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
             print(output)
 
-
 if redef_init_pop == True:
     logfile.write('Redefining init pop for {} games\n'.format(init_pop_games))
     logfile.flush()
     init_pop(init_pop_games)
-
-model = Model(env)
 
 if load_model:
     model.nn_load()
@@ -340,7 +336,7 @@ totalrewards = np.empty(N)
 costs = np.empty(N)
 
 def log_parameters():
-    logfile.write(str(model.model.get_train_vars()))
+    #logfile.write(str(model.model.get_train_vars()))
     logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n MiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
     logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
     logfile.write(
@@ -356,24 +352,27 @@ def log_parameters():
 
 log_parameters()
 
-for n in range(N):
-    logfile.flush()
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
 
-    if eps > 0:
-        #eps *= 0.995
-        eps = eps_factor / np.sqrt(n + 1)
+    for n in range(N):
+        logfile.flush()
 
-    totalreward = play_one(env, model, eps, gamma)
-    debugfile.write('{}\n'.format(len(memory)))
-    totalrewards[n] = totalreward
+        if eps > 0:
+            eps *= eps_decay
+            #eps = eps_factor / np.sqrt(n + 1)
 
-    if n > 1 and n % 10 == 0:
-        if save_model:
-            model.nn_save()
+        totalreward = play_one(env, dqnetwork, eps, gamma)
+        debugfile.write('{}\n'.format(len(memory)))
+        totalrewards[n] = totalreward
 
-        tx = time.time() - t0
-        output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
-        logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
+        if n > 1 and n % 10 == 0:
+            if save_model:
+                model.nn_save()
+
+            tx = time.time() - t0
+            output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
+            logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
 
     # If average totalreward of last 100 games is >=200 stop
     #if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
