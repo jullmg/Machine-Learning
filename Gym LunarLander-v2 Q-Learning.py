@@ -69,7 +69,6 @@ optimizer = 'Adam'
 loss_function = 'mean_square'
 
 nn_layer_1_activation = 'relu'
-nn_layer_2_activation = 'tanh'
 nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
@@ -156,6 +155,7 @@ class DQNet:
         y = []
 
         for state, action, reward, next_state, done in data:
+            x.append(state)
             target = reward
 
             next_state = np.array(next_state).reshape(-1, 8)
@@ -168,6 +168,8 @@ class DQNet:
 
             target_f[0][action] = target
 
+            y.append(target_f)
+
             sess.run(self.optimizer, feed_dict={self.inputs: state, self.rewards: target_f})
 
 
@@ -176,8 +178,10 @@ class DQNet:
         if np.random.random() < eps:
             return self.env.action_space.sample()
         else:
+
             s = np.array(s).reshape(-1, 8)
-            return  np.argmax(self.predict(s))
+            prediction = np.argmax(self.predict(s))
+            return prediction
 
 
 # Reset the graph
@@ -217,32 +221,6 @@ def play_one(env, model, eps, gamma):
 
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
     return totalreward
-
-
-'''
-for i in range(len(x[0])):
-    x[0][i] = np.random.uniform(0.001, 5.0)
-
-
-for i in x[0]:
-    i = 3.14 * pow(i, 2)
-    y.append(i)
-
-
-
-# Prediction
-with tf.Session() as sess:
-    # Initialize the variables
-    sess.run(tf.global_variables_initializer())
-
-    for i in range(1000):
-
-        prediction = sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: x})
-        print(prediction)
-
-        sess.run(dqnetwork.optimizer, feed_dict={dqnetwork.inputs: x, dqnetwork.rewards: y})
-
-'''
 
 class Model:
     def __init__(self, env):
@@ -340,8 +318,7 @@ def log_parameters():
     logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n MiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
     logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
     logfile.write(
-        'Layer 1 activation: {}\nLayer 2 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation,
-                                                                                         nn_layer_2_activation,
+        'Layer 1 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation,
                                                                                          nn_output_activation))
     if nn_dropout:
         logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
