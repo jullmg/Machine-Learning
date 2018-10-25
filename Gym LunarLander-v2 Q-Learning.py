@@ -63,7 +63,7 @@ save_model = False
 load_model = False
 replay_model = False
 replay_count = 1000
-render = False
+render = True
 
 optimizer = 'Adam'
 loss_function = 'mean_square'
@@ -85,7 +85,7 @@ eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
 # 20 semble optimal
-minibatch_size = 20
+minibatch_size = 1
 memory = deque(maxlen=500000)
 
 env = gym.make('LunarLander-v2')
@@ -140,11 +140,12 @@ class DQNet:
 
             self.hiddenlayer1 = tf.layers.dense(self.inputs, 512, activation=tf.nn.relu)
 
-            self.outputs = tf.layers.dense(self.hiddenlayer1, output_size )
+            self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
-            self.loss = tf.squared_difference(self.outputs, self.rewards)
+            self.loss = tf.reduce_mean(tf.squared_difference(self.outputs, self.rewards))
 
             self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
+            #self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize(self.loss)
 
     def predict(self, observation):
         prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
@@ -158,29 +159,38 @@ class DQNet:
             x.append(state)
             target = reward
 
+            #print('reward', reward)
+
             next_state = np.array(next_state).reshape(-1, 8)
             state = np.array(next_state).reshape(-1, 8)
 
             if not done:
-                target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
+                #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
+                target = reward + gamma * np.max(sess.run(self.outputs, feed_dict={self.inputs: next_state}))  # use np.amax?
+                #print('target', target)
 
-            target_f = self.predict(state)
+            #target_f = self.predict(state)
+            target_f = sess.run(self.outputs, feed_dict={self.inputs: state})
 
             target_f[0][action] = target
-
+            print(target_f)
             y.append(target_f)
 
-            sess.run(self.optimizer, feed_dict={self.inputs: state, self.rewards: target_f})
+        y = np.array(y).reshape(-1, 4)
+        x = np.array(x)
+
+        sess.run(self.optimizer, feed_dict={self.inputs: x, self.rewards: y})
 
 
     def sample_action(self, s, eps):
+        s = np.array(s).reshape(-1, 8)
         # np.random (0.01-0.99)
+        #print(np.max(self.predict(s)))
+
         if np.random.random() < eps:
             return self.env.action_space.sample()
         else:
-
-            s = np.array(s).reshape(-1, 8)
-            prediction = np.argmax(self.predict(s))
+            prediction = np.argmax(sess.run(self.outputs, feed_dict={self.inputs: s}))
             return prediction
 
 
