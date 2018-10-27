@@ -64,7 +64,6 @@ load_model = False
 replay_model = False
 replay_count = 1000
 render = True
-
 optimizer = 'Adam'
 loss_function = 'mean_square'
 
@@ -82,10 +81,10 @@ eps = 1
 eps_decay = 0.995
 eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
-gamma = 0.99
+gamma = 0.95
 
 # 20 semble optimal
-minibatch_size = 1
+minibatch_size = 20
 memory = deque(maxlen=500000)
 
 env = gym.make('LunarLander-v2')
@@ -133,19 +132,54 @@ class DQNet:
         self.name = name
         self.env = env
 
-        with tf.variable_scope(self.name):
-            self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
+        #with tf.variable_scope(self.name):
+        self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
 
-            self.rewards = tf.placeholder(tf.float32, [None, output_size], name="rewards")
 
-            self.hiddenlayer1 = tf.layers.dense(self.inputs, 512, activation=tf.nn.relu)
+        self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
-            self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
+        self.hiddenlayer1 = tf.layers.dense(self.inputs, 512, activation=tf.nn.relu)
 
-            self.loss = tf.reduce_mean(tf.squared_difference(self.outputs, self.rewards))
+        self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
-            #self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize(self.loss)
+        #self.loss = tf.sqrt(tf.reduce_mean(tf.squared_difference(self.outputs, self.target_Q)))
+        #self.loss = tf.clip_by_value(self.loss, -10, 10)
+        self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
+
+
+        #self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
+
+
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        self.gvs = self.optimizer.compute_gradients(self.loss)
+        self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
+        self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
+
+        '''
+        self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=0.05)
+        self.train_op = self.optimizer.minimize(self.loss)
+        
+
+        
+
+        self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=50)
+        self.train_op = self.optimizer.minimize(self.loss)
+
+        
+        
+        solution 1:
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        gvs = optimizer.compute_gradients(cost)
+        capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
+        train_op = optimizer.apply_gradients(capped_gvs)
+        
+        solution 2:
+        original_optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        optimizer = tf.contrib.estimator.clip_gradients_by_norm(original_optimizer, clip_norm=5.0)
+        train_op = optimizer.minimize(loss)
+        '''
 
     def predict(self, observation):
         prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
@@ -159,27 +193,41 @@ class DQNet:
             x.append(state)
             target = reward
 
+
             #print('reward', reward)
 
             next_state = np.array(next_state).reshape(-1, 8)
-            state = np.array(next_state).reshape(-1, 8)
+
+            state = np.array(state).reshape(-1, 8)
 
             if not done:
                 #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
-                target = reward + gamma * np.max(sess.run(self.outputs, feed_dict={self.inputs: next_state}))  # use np.amax?
+                target = reward + gamma * np.max(sess.run(self.outputs, feed_dict={self.inputs:next_state})) # use np.amax?
                 #print('target', target)
 
+
             #target_f = self.predict(state)
-            target_f = sess.run(self.outputs, feed_dict={self.inputs: state})
+            target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
+            debugfile.write('{}\n'.format(target_f))
 
             target_f[0][action] = target
-            print(target_f)
-            y.append(target_f)
+
+            y.append([target_f])
+
+
 
         y = np.array(y).reshape(-1, 4)
-        x = np.array(x)
 
-        sess.run(self.optimizer, feed_dict={self.inputs: x, self.rewards: y})
+
+        x = np.array(x).reshape(-1, 8)
+
+        #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
+        _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
+        # print(y)
+        #print(target_Q)
+        #print(outputs)
+        print('Loss: ', loss)
+        #exit()
 
 
     def sample_action(self, s, eps):
@@ -191,6 +239,7 @@ class DQNet:
             return self.env.action_space.sample()
         else:
             prediction = np.argmax(sess.run(self.outputs, feed_dict={self.inputs: s}))
+
             return prediction
 
 
@@ -208,7 +257,7 @@ def play_one(env, model, eps, gamma):
 
     while not done:
 
-        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
+        if state[6] == 1 and state[7] == 1 and state[4] < 0.18:
             action = 0
         else:
             action = dqnetwork.sample_action(state, eps)
@@ -345,7 +394,7 @@ with tf.Session() as sess:
     for n in range(N):
         logfile.flush()
 
-        if eps > 0:
+        if eps > eps_min:
             eps *= eps_decay
             #eps = eps_factor / np.sqrt(n + 1)
 
