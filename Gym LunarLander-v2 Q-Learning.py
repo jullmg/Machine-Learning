@@ -308,7 +308,7 @@ log_parameters()
 for n in range(N):
     logfile.flush()
 
-    if eps > 0:
+    if eps > eps_min:
         #eps *= 0.995
         eps = eps_factor / np.sqrt(n + 1)
 
