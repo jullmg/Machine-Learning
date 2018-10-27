@@ -52,7 +52,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('avec la formule eps d\'origine\n')
+logfile.write('remis gradient clipping -5/5 et demarre training a 10k steps en memoire\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -63,7 +63,7 @@ save_model = False
 load_model = False
 replay_model = False
 replay_count = 1000
-render = True
+render = False
 optimizer = 'Adam'
 loss_function = 'mean_square'
 
@@ -72,8 +72,6 @@ nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 1
-batch = 64
-game_timeout = 3000
 
 lr = 1e-3
 N = 100000
@@ -81,7 +79,7 @@ eps = 1
 eps_decay = 0.995
 eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
-gamma = 0.95
+gamma = 1
 
 # 20 semble optimal
 minibatch_size = 20
@@ -147,10 +145,10 @@ class DQNet:
         self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
 
 
-        #self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
+        #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
         self.gvs = self.optimizer.compute_gradients(self.loss)
         self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
         self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
@@ -268,7 +266,7 @@ def play_one(env, model, eps, gamma):
         memory.append((state, action, reward, next_state, done))
         state = next_state
 
-        if len(memory) > minibatch_size:
+        if len(memory) > 10000:
             minibatch = random.sample(memory, minibatch_size)
             dqnetwork.train(minibatch)
 
