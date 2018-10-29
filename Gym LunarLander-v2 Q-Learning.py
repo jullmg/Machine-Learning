@@ -52,7 +52,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('remis gradient clipping -5/5 et demarre training a 10k steps en memoire\n')
+logfile.write('gamma back to 0.99\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -79,7 +79,7 @@ eps = 1
 eps_decay = 0.995
 eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
-gamma = 1
+gamma = 0.99
 
 # 20 semble optimal
 minibatch_size = 20
@@ -140,9 +140,11 @@ class DQNet:
 
         self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
-        #self.loss = tf.sqrt(tf.reduce_mean(tf.squared_difference(self.outputs, self.target_Q)))
-        #self.loss = tf.clip_by_value(self.loss, -10, 10)
-        self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
+
+
+        #self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
+        #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
+        self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
 
 
         #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
@@ -157,26 +159,6 @@ class DQNet:
         self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=0.05)
         self.train_op = self.optimizer.minimize(self.loss)
-        
-
-        
-
-        self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-        self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=50)
-        self.train_op = self.optimizer.minimize(self.loss)
-
-        
-        
-        solution 1:
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        gvs = optimizer.compute_gradients(cost)
-        capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
-        train_op = optimizer.apply_gradients(capped_gvs)
-        
-        solution 2:
-        original_optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        optimizer = tf.contrib.estimator.clip_gradients_by_norm(original_optimizer, clip_norm=5.0)
-        train_op = optimizer.minimize(loss)
         '''
 
     def predict(self, observation):
@@ -189,7 +171,7 @@ class DQNet:
 
         for state, action, reward, next_state, done in data:
             x.append(state)
-            target = reward
+            target_Qvalue = reward
 
 
             #print('reward', reward)
@@ -200,33 +182,27 @@ class DQNet:
 
             if not done:
                 #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
-                target = reward + gamma * np.max(sess.run(self.outputs, feed_dict={self.inputs:next_state})) # use np.amax?
+                target_Qvalue = reward + gamma * np.max(sess.run(self.outputs, feed_dict={self.inputs:next_state})) # use np.amax?
                 #print('target', target)
-
 
             #target_f = self.predict(state)
             target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
             debugfile.write('{}\n'.format(target_f))
 
-            target_f[0][action] = target
+            target_f[0][action] = target_Qvalue
 
-            y.append([target_f])
-
+            y.append(target_f)
 
 
         y = np.array(y).reshape(-1, 4)
-
-
         x = np.array(x).reshape(-1, 8)
 
         #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
         _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
         # print(y)
-        #print(target_Q)
-        #print(outputs)
+        print(target_Q)
+        print(outputs)
         print('Loss: ', loss)
-        #exit()
-
 
     def sample_action(self, s, eps):
         s = np.array(s).reshape(-1, 8)
@@ -264,17 +240,18 @@ def play_one(env, model, eps, gamma):
         totalreward += reward
 
         memory.append((state, action, reward, next_state, done))
+
         state = next_state
 
-        if len(memory) > 10000:
+
+        if len(memory) > minibatch_size:
             minibatch = random.sample(memory, minibatch_size)
             dqnetwork.train(minibatch)
 
-        #debugfile.write('Act: {} rew : {} eps : {}\n'.format(action, round(reward, 2), round(eps, 2)))
-        #debugfile.flush()
 
         if render == True:
             env.render()
+
 
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
     return totalreward
