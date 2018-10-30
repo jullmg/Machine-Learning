@@ -39,8 +39,8 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_07.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_07'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_09.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_09'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_04'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
@@ -52,7 +52,7 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('gamma back to 0.99\n')
+logfile.write('\n')
 
 redef_init_pop = False
 init_pop_games = 10000
@@ -73,7 +73,7 @@ nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 1
 
-lr = 1e-3
+lr = 0.001
 N = 100000
 eps = 1
 eps_decay = 0.995
@@ -140,16 +140,13 @@ class DQNet:
 
         self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
-
-
         #self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
         #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
         self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
 
-
         #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
-
+        # Gradient Clipping -5,5
         self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
         self.gvs = self.optimizer.compute_gradients(self.loss)
         self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
@@ -200,8 +197,8 @@ class DQNet:
         #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
         _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
         # print(y)
-        print(target_Q)
-        print(outputs)
+        #print(target_Q)
+        #print(outputs)
         print('Loss: ', loss)
 
     def sample_action(self, s, eps):
