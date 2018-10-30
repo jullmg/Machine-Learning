@@ -366,9 +366,11 @@ with tf.Session() as sess:
     for n in range(N):
         logfile.flush()
 
+
         if eps > eps_min:
             eps *= eps_decay
             #eps = eps_factor / np.sqrt(n + 1)
+
 
         totalreward = play_one(env, dqnetwork, eps, gamma)
         debugfile.write('{}\n'.format(len(memory)))
