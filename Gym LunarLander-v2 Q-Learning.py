@@ -53,7 +53,7 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('Learn Rate to 0.001, minimum train start  = 10k steps, training stops at avg 205\n')
+logfile.write('testing with CER\n')
 
 save_model = True
 load_model = False
@@ -203,15 +203,18 @@ def play_one(env, model, eps, gamma):
         next_state, reward, done, info = env.step(action)
         totalreward += reward
 
-        memory.append((state, action, reward, next_state, done))
+        last_sequence = (state, action, reward, next_state, done)
+        memory.append(last_sequence)
 
         state = next_state
 
 
         if len(memory) > 5000:
             minibatch = random.sample(memory, minibatch_size)
-            dqnetwork.train(minibatch)
+            # Appending last event for Combined Experience Replay
+            minibatch.append(last_sequence)
 
+            dqnetwork.train(minibatch)
 
         if render == True:
             env.render()
