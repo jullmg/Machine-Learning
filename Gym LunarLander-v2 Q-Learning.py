@@ -53,10 +53,9 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
+logfile.write('Learn Rate to 0.001, minimum train start  = 10k steps, training stops at avg 205\n')
 
-logfile.write('Learn Rate to 0.0005, minimum train start  = 20k steps\n')
-
-save_model = False
+save_model = True
 load_model = False
 load_and_replay_model = False
 replay_count = 1000
@@ -68,6 +67,7 @@ nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 1
+break_reward = 205
 
 lr = 0.0005
 N = 100000
@@ -80,7 +80,6 @@ gamma = 0.99
 # 20 semble optimal
 minibatch_size = 20
 memory = deque(maxlen=500000)
-
 
 env = gym.make('LunarLander-v2')
 input_size = env.observation_space.shape[0]
@@ -155,7 +154,7 @@ class DQNet:
 
             #target_f = self.predict(state)
             target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
-            debugfile.write('{}\n'.format(target_f))
+            #
 
             target_f[0][action] = target_Qvalue
 
@@ -170,7 +169,8 @@ class DQNet:
         # print(y)
         #print(target_Q)
         #print(outputs)
-        print('Loss: ', loss)
+
+
 
     def sample_action(self, s, eps):
         s = np.array(s).reshape(-1, 8)
@@ -210,7 +210,7 @@ def play_one(env, model, eps, gamma):
         state = next_state
 
 
-        if len(memory) > 20000:
+        if len(memory) > 5000:
             minibatch = random.sample(memory, minibatch_size)
             dqnetwork.train(minibatch)
 
@@ -273,6 +273,7 @@ log_parameters()
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
+    saver = tf.train.Saver()
 
     for n in range(N):
         logfile.flush()
@@ -282,23 +283,24 @@ with tf.Session() as sess:
             eps *= eps_decay
             #eps = eps_factor / np.sqrt(n + 1)
 
-
         totalreward = play_one(env, dqnetwork, eps, gamma)
-        debugfile.write('{}\n'.format(len(memory)))
         totalrewards[n] = totalreward
 
         if n > 1 and n % 10 == 0:
-            if save_model:
-                model.nn_save()
+            if save_model and n % 100 == 0:
+                saver.save(sess, './LunarLander_Models/testsave', global_step=n)
 
+            reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
             tx = time.time() - t0
-            output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(totalrewards[max(0, n - 100):(n + 1)].mean())
+            output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str()
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
+            if reward_avg_last100 >= break_reward:
+                break
+
 
     # If average totalreward of last 100 games is >=200 stop
     #if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
     #    break
-
 
 #plt.plot(totalrewards)
 #plt.title("Rewards")
