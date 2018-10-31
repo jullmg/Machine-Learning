@@ -16,9 +16,11 @@ Actions :
 
 To do :
 Plot graphs
+save and load model
+Integrate dual deep network (target network)
 Integrate Combined Experience Replay (CER)
 Integrade Priorized Experience Replay (PER)
-Integrate dual deep network
+
 Train steps?
 
 '''
@@ -52,28 +54,22 @@ except FileNotFoundError:
     logfile = open(FileNotFoundError.filename, 'w')
 
 
-logfile.write('\n')
+logfile.write('Learn Rate to 0.0005, minimum train start  = 20k steps\n')
 
-redef_init_pop = False
-init_pop_games = 10000
-init_pop_goal = 0
-
-pre_train = False
 save_model = False
 load_model = False
-replay_model = False
+load_and_replay_model = False
 replay_count = 1000
 render = False
-optimizer = 'Adam'
-loss_function = 'mean_square'
 
 nn_layer_1_activation = 'relu'
+nn_layer_1_units = 512
 nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
 epochs = 1
 
-lr = 0.001
+lr = 0.0005
 N = 100000
 eps = 1
 eps_decay = 0.995
@@ -85,36 +81,11 @@ gamma = 0.99
 minibatch_size = 20
 memory = deque(maxlen=500000)
 
+
 env = gym.make('LunarLander-v2')
 input_size = env.observation_space.shape[0]
 output_size = env.action_space.n
 t0 = time.time()
-
-def init_pop(games):
-    data = []
-    total_kept_games = 0
-
-    for n in range(games):
-        env.reset()
-        done = False
-        total_score = 0
-        game_memory = []
-        while not done:
-            action = np.random.randint(0, env.action_space.n)
-            observation, reward, done, _ = env.step(action)
-            game_memory.append([observation, action, reward])
-            total_score += reward
-
-        if total_score >= init_pop_goal:
-            #print(total_score)
-            for step in game_memory:
-                data.append(step)
-            total_kept_games += 1
-
-    data = np.array(data)
-    print('saving initpop_01')
-    np.save('lunarlander_qlearn_initpop_01', data)
-
 
 def plot_running_avg(totalrewards):
     N = len(totalrewards)
@@ -136,7 +107,7 @@ class DQNet:
 
         self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
-        self.hiddenlayer1 = tf.layers.dense(self.inputs, 512, activation=tf.nn.relu)
+        self.hiddenlayer1 = tf.layers.dense(self.inputs, nn_layer_1_units, activation=tf.nn.relu)
 
         self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
@@ -213,13 +184,11 @@ class DQNet:
 
             return prediction
 
-
 # Reset the graph
 tf.reset_default_graph()
 
 # Instantiate DQNetwork
 dqnetwork = DQNet(name='dqnetwork', env=env)
-
 
 def play_one(env, model, eps, gamma):
     state = env.reset()
@@ -241,7 +210,7 @@ def play_one(env, model, eps, gamma):
         state = next_state
 
 
-        if len(memory) > minibatch_size:
+        if len(memory) > 20000:
             minibatch = random.sample(memory, minibatch_size)
             dqnetwork.train(minibatch)
 
@@ -252,50 +221,6 @@ def play_one(env, model, eps, gamma):
 
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
     return totalreward
-
-class Model:
-    def __init__(self, env):
-        self.env = env
-
-        self.model = create_nn(env.observation_space.shape[0])
-        title = './LunarLander_Models/LunarLander_Q_Learning_08-0'
-
-
-    def train(self, data):
-        x = []
-        y = []
-
-        for state, action, reward, next_state, done in data:
-            x.append(state)
-            target = reward
-
-            if not done:
-                target = reward + gamma * np.max(model.prediction(next_state))  # use np.amax?
-
-            target_f = model.prediction(state)
-            target_f[0][action] = target
-
-            y.append(target_f)
-
-        x = np.array(x)
-        x = x.reshape(-1, 8, 1)
-        y = np.array(y)
-        y = y.reshape(-1, 4)
-
-        self.model.fit(x, y, n_epoch=epochs, batch_size=batch)
-
-    def nn_save(self):
-        self.model.save(modelsave_name)
-
-    def nn_load(self):
-        self.model.load(modelload_name)
-
-    def sample_action(self, s, eps):
-        # np.random (0.01-0.99)
-        if np.random.random() < eps:
-            return self.env.action_space.sample()
-        else:
-            return  np.argmax(model.prediction(s))
 
 def replay(model, num):
     totalrewards = np.empty(replay_count)
@@ -321,11 +246,6 @@ def replay(model, num):
             output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
             print(output)
 
-if redef_init_pop == True:
-    logfile.write('Redefining init pop for {} games\n'.format(init_pop_games))
-    logfile.flush()
-    init_pop(init_pop_games)
-
 if load_model:
     model.nn_load()
 
@@ -333,24 +253,15 @@ if load_model:
         replay(model, replay_count)
         exit()
 
-if pre_train and not load_model:
-    training_data = np.load('lunarlander_qlearn_initpop_01.npy')
-    logfile.write('Training model with {} steps from random games with min {} score.'.format(len(training_data), init_pop_goal))
-    logfile.flush()
-    model.train(training_data)
-    tx = time.time() - t0
-    logfile.write('Training Done, elapsed time: {}s\n\n'.format(round(tx,2)))
-
 totalrewards = np.empty(N)
 costs = np.empty(N)
 
 def log_parameters():
     #logfile.write(str(model.model.get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\n MiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
-    logfile.write('Epsilon: {}\nOptimizer: {}\nLoss Function: {}\n'.format(eps_factor, optimizer, loss_function))
+    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
+    logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps_factor,eps_decay))
     logfile.write(
-        'Layer 1 activation: {}\nOutput activation: {}\n'.format(nn_layer_1_activation,
-                                                                                         nn_output_activation))
+        'Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
     if nn_dropout:
         logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
     else:
