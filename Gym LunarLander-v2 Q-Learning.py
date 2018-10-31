@@ -43,7 +43,7 @@ from collections import deque
 # Pre-flight parameters
 logfile_name = './LunarLander_Logs/LunarLander_Qlearn_09.log'
 modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_09'
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_04'
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-5200.meta'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
@@ -57,7 +57,6 @@ logfile.write('Learn Rate to 0.001, minimum train start  = 10k steps, training s
 
 save_model = True
 load_model = False
-load_and_replay_model = False
 replay_count = 1000
 render = False
 
@@ -102,7 +101,6 @@ class DQNet:
 
         #with tf.variable_scope(self.name):
         self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
-
 
         self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
@@ -231,12 +229,14 @@ def replay(model, num):
         done = False
 
         while not done:
-            if observation[6] == 1 and observation[7] == 1 and observation[4] < 0.1:
+            if observation[6] == 1 and observation[7] == 1 and observation[4] < 0.18:
                 action = 0
             else:
-                action = model.prediction(observation)
+                observation = observation.reshape(-1, 8)
+                print(model.predict(observation))
+                action = np.argmax(model.predict(observation))
 
-            observation, reward, done, info = env.step(np.argmax(action))
+            observation, reward, done, info = env.step(action)
             game_score += reward
             env.render()
 
@@ -247,10 +247,15 @@ def replay(model, num):
             print(output)
 
 if load_model:
-    model.nn_load()
-
-    if replay_model:
-        replay(model, replay_count)
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        saver = tf.train.import_meta_graph(modelload_name)
+        saver.restore(sess, tf.train.latest_checkpoint('./LunarLander_Models/'))
+        print(saver._var_list)
+        exit()
+        graph = tf.get_default_graph()
+        graph.get_tensor_by_name("op_to_restore:0")
+        replay(dqnetwork, replay_count)
         exit()
 
 totalrewards = np.empty(N)
@@ -283,16 +288,17 @@ with tf.Session() as sess:
             eps *= eps_decay
             #eps = eps_factor / np.sqrt(n + 1)
 
+        # Play one game
         totalreward = play_one(env, dqnetwork, eps, gamma)
         totalrewards[n] = totalreward
 
         if n > 1 and n % 10 == 0:
             if save_model and n % 100 == 0:
-                saver.save(sess, './LunarLander_Models/testsave', global_step=n)
+                saver.save(sess, modelsave_name, global_step=n)
 
             reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
             tx = time.time() - t0
-            output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str()
+            output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
             if reward_avg_last100 >= break_reward:
                 break
