@@ -76,7 +76,11 @@ eps_min = 0.1
 eps_factor = 1 # only if using formula from original script
 gamma = 0.99
 
-# 20 semble optimal
+# Q-target-Network clone threshold
+tau = 0
+tau_max = 10000
+
+# 20 seems optimal
 minibatch_size = 20
 memory = deque(maxlen=500000)
 
@@ -99,32 +103,27 @@ class DQNet:
         self.name = name
         self.env = env
 
-        #with tf.variable_scope(self.name):
-        self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
+        with tf.variable_scope(self.name):
+            self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
 
-        self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
+            self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
-        self.hiddenlayer1 = tf.layers.dense(self.inputs, nn_layer_1_units, activation=tf.nn.relu)
+            self.hiddenlayer1 = tf.layers.dense(self.inputs, nn_layer_1_units, activation=tf.nn.relu)
 
-        self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
+            self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
-        #self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
-        #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-        self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
+            #self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
+            #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
+            self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
 
-        #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
+            #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
-        # Gradient Clipping -5,5
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-        self.gvs = self.optimizer.compute_gradients(self.loss)
-        self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
-        self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
+            # Gradient Clipping -5,5
+            self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
+            self.gvs = self.optimizer.compute_gradients(self.loss)
+            self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
+            self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
 
-        '''
-        self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-        self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=0.05)
-        self.train_op = self.optimizer.minimize(self.loss)
-        '''
 
     def predict(self, observation):
         prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
@@ -168,8 +167,6 @@ class DQNet:
         #print(target_Q)
         #print(outputs)
 
-
-
     def sample_action(self, s, eps):
         s = np.array(s).reshape(-1, 8)
         # np.random (0.01-0.99)
@@ -187,6 +184,9 @@ tf.reset_default_graph()
 
 # Instantiate DQNetwork
 dqnetwork = DQNet(name='dqnetwork', env=env)
+
+#Instantiate Target DQNetwork
+target_network = DQNet(name='target_network', env=env)
 
 def play_one(env, model, eps, gamma):
     state = env.reset()
@@ -207,6 +207,13 @@ def play_one(env, model, eps, gamma):
         memory.append(last_sequence)
 
         state = next_state
+        tau += 1
+
+        if tau >= tau_max:
+            update_target = update_target_graph()
+            sess.run(update_target)
+            tau = 0
+            print("Model updated")
 
 
         if len(memory) > 5000:
@@ -249,6 +256,20 @@ def replay(model, num):
             output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
             print(output)
 
+def update_target_graph():
+    # Get the parameters of our DQNNetwork
+    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork")
+
+    # Get the parameters of our Target_network
+    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "target_network")
+
+    op_holder = []
+
+    # Update our target_network parameters with DQNNetwork parameters
+    for from_var, to_var in zip(from_vars, to_vars):
+        op_holder.append(to_var.assign(from_var))
+    return op_holder
+
 if load_model:
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -283,8 +304,11 @@ with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver()
 
+
+
     for n in range(N):
         logfile.flush()
+
 
 
         if eps > eps_min:
