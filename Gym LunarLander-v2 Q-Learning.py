@@ -16,7 +16,6 @@ Actions :
 
 To do :
 Plot graphs
-save and load model
 Integrate dual deep network (target network)
 Integrate Combined Experience Replay (CER)
 Integrade Priorized Experience Replay (PER)
@@ -29,9 +28,6 @@ import gym
 from gym import wrappers
 import numpy as np
 import tensorflow as tf
-import tflearn
-from tflearn.layers.core import input_data, dropout, fully_connected
-from tflearn.layers.estimator import regression
 import time
 import os
 import math
