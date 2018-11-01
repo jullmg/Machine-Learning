@@ -41,9 +41,9 @@ from collections import deque
 
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_09.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_09'
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-5200.meta'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_10'
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-12200'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
@@ -53,7 +53,7 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('Learn Rate to 0.001, minimum train start  = 10k steps, training stops at avg 205\n')
+logfile.write('Learn Rate to 0.0005,  training stops at avg20 205\n')
 
 save_model = True
 load_model = False
@@ -188,6 +188,8 @@ tf.reset_default_graph()
 # Instantiate DQNetwork
 dqnetwork = DQNet(name='dqnetwork', env=env)
 
+saver = tf.train.Saver()
+
 def play_one(env, model, eps, gamma):
     state = env.reset()
     done = False
@@ -238,6 +240,7 @@ def replay(model, num):
 
             observation, reward, done, info = env.step(action)
             game_score += reward
+
             env.render()
 
         print('total game score: {}'.format(game_score))
@@ -249,14 +252,11 @@ def replay(model, num):
 if load_model:
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        saver = tf.train.import_meta_graph(modelload_name)
-        saver.restore(sess, tf.train.latest_checkpoint('./LunarLander_Models/'))
-        print(saver._var_list)
-        exit()
-        graph = tf.get_default_graph()
-        graph.get_tensor_by_name("op_to_restore:0")
+
+        saver.restore(sess, modelload_name)
+
         replay(dqnetwork, replay_count)
-        exit()
+
 
 totalrewards = np.empty(N)
 costs = np.empty(N)
@@ -278,7 +278,7 @@ log_parameters()
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
-    saver = tf.train.Saver()
+
 
     for n in range(N):
         logfile.flush()
@@ -292,16 +292,19 @@ with tf.Session() as sess:
         totalreward = play_one(env, dqnetwork, eps, gamma)
         totalrewards[n] = totalreward
 
+        reward_avg_last20 = totalrewards[max(0, n - 20):(n + 1)].mean()
+        reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
+
         if n > 1 and n % 10 == 0:
-            if save_model and n % 100 == 0:
+            if save_model:
                 saver.save(sess, modelsave_name, global_step=n)
 
-            reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
             tx = time.time() - t0
             output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
-            if reward_avg_last100 >= break_reward:
-                break
+
+        if reward_avg_last20 >= break_reward:
+            break
 
 
     # If average totalreward of last 100 games is >=200 stop
