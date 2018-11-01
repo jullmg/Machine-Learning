@@ -323,11 +323,12 @@ with tf.Session() as sess:
             if save_model and n % 100 == 0:
                 saver.save(sess, modelsave_name, global_step=n)
 
+            reward_avg_last20 = totalrewards[max(0, n - 20):(n + 1)].mean()
             reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
             tx = time.time() - t0
             output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
-            if reward_avg_last100 >= break_reward:
+            if reward_avg_last20 >= break_reward:
                 break
 
 
