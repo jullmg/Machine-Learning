@@ -63,7 +63,7 @@ nn_dropout = False
 nn_dropout_factor = 0.95
 
 tau = 0
-tau_max = 1000
+tau_max = 10000
 
 epochs = 1
 break_reward = 205
