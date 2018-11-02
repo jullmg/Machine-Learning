@@ -49,7 +49,7 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('Learn Rate to 0.0005,  training stops at avg20 205\n')
+logfile.write('\n')
 
 save_model = True
 load_model = False
@@ -63,7 +63,7 @@ nn_dropout = False
 nn_dropout_factor = 0.95
 
 tau = 0
-tau_max = 10000
+tau_max = 1000
 
 epochs = 1
 break_reward = 205
@@ -147,17 +147,15 @@ class DQNet:
 
             if not done:
                 #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
-                target_Qvalue = reward + gamma * np.max(sess.run(self.outputs, feed_dict={self.inputs:next_state})) # use np.amax?
+                target_Qvalue = reward + gamma * np.max(sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs:next_state})) # use np.amax?
                 #print('target', target)
 
             #target_f = self.predict(state)
             target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
-            #
 
             target_f[0][action] = target_Qvalue
 
             y.append(target_f)
-
 
         y = np.array(y).reshape(-1, 4)
         x = np.array(x).reshape(-1, 8)
@@ -206,6 +204,7 @@ def update_target_graph():
     # Update our target_network parameters with DQNNetwork parameters
     for from_var, to_var in zip(from_vars, to_vars):
         op_holder.append(to_var.assign(from_var))
+
     return op_holder
 
 def play_one(env, model, eps, gamma):
@@ -221,6 +220,10 @@ def play_one(env, model, eps, gamma):
         else:
             action = dqnetwork.sample_action(state, eps)
 
+        # state = np.array(state).reshape(-1, 8)
+        # print('Network pred:', sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: state}))
+        # print('Target  pred:', sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs: state}))
+
         next_state, reward, done, info = env.step(action)
         totalreward += reward
 
@@ -234,7 +237,6 @@ def play_one(env, model, eps, gamma):
             dqnetwork.train(minibatch)
 
         tau += 1
-        print(tau)
 
         if tau > tau_max:
             update_target = update_target_graph()
@@ -317,7 +319,7 @@ with tf.Session() as sess:
         totalreward = play_one(env, dqnetwork, eps, gamma)
         totalrewards[n] = totalreward
 
-        reward_avg_last20 = totalrewards[max(0, n - 20):(n + 1)].mean()
+        reward_avg_last35 = totalrewards[max(0, n - 35):(n + 1)].mean()
         reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
 
         if n > 1 and n % 10 == 0:
@@ -328,7 +330,7 @@ with tf.Session() as sess:
             output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
 
-        if reward_avg_last20 >= break_reward:
+        if reward_avg_last35 >= break_reward:
             break
 
 #plt.plot(totalrewards)
