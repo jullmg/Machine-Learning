@@ -33,8 +33,7 @@ import os
 import math
 import random
 from collections import deque
-#import matplotlib.pyplot as plt
-
+import matplotlib.pyplot as plt
 
 # Pre-flight parameters
 logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
@@ -65,7 +64,7 @@ epochs = 1
 break_reward = 205
 
 lr = 0.0005
-N = 100000
+N = 10000
 eps = 1
 eps_decay = 0.995
 eps_min = 0.1
@@ -81,14 +80,18 @@ input_size = env.observation_space.shape[0]
 output_size = env.action_space.n
 t0 = time.time()
 
-def plot_running_avg(totalrewards):
-    N = len(totalrewards)
-    running_avg = np.empty(N)
-    for t in range(N):
-        running_avg[t] = totalrewards[max(0, t-100):(t+1)].mean()
+def plot_moving_avg(totalrewards, qty):
+    Num = len(totalrewards)
+    running_avg = np.empty(Num)
+    for t in range(Num):
+        running_avg[t] = totalrewards[max(0, t-qty):(t+1)].mean()
+
     plt.plot(running_avg)
     plt.title("Running Average")
-    plt.show()
+    #plt.draw()
+    #plt.show()
+    plt.show(block=False)
+
 
 class DQNet:
     def __init__(self, name, env=None):
@@ -299,6 +302,8 @@ with tf.Session() as sess:
             output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
 
+            #plot_moving_avg(totalrewards[:n], 100)
+
         if reward_avg_last20 >= break_reward:
             break
 
@@ -307,10 +312,8 @@ with tf.Session() as sess:
     #if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
     #    break
 
-#plt.plot(totalrewards)
-#plt.title("Rewards")
-#plt.show()
-#plot_running_avg(totalrewards)
+
+
 
 logfile.close()
 debugfile.close()
