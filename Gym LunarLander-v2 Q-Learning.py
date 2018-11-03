@@ -35,11 +35,9 @@ from collections import deque
 #import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_10'
-
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-1850'
-
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_test01.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_test01'
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-10'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
@@ -49,14 +47,14 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-
 logfile.write('\n')
-
 
 save_model = True
 load_model = False
 replay_count = 1000
 render = False
+use_gpu = 0
+config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
 CER = True
 
@@ -73,12 +71,12 @@ epochs = 1
 break_reward = 205
 
 lr = 0.001
-N = 100000
+N = 10000
 
 eps = 1
 eps_decay = 0.995
 eps_min = 0.1
-eps_factor = 1 # only if using formula from original script
+
 gamma = 0.99
 
 # 20 semble optimal
@@ -89,6 +87,8 @@ env = gym.make('LunarLander-v2')
 input_size = env.observation_space.shape[0]
 output_size = env.action_space.n
 t0 = time.time()
+
+###################FUNCTIONS&CLASSES############################################
 
 def plot_moving_avg(totalrewards, qty):
     Num = len(totalrewards)
@@ -102,6 +102,112 @@ def plot_moving_avg(totalrewards, qty):
     #plt.show()
     plt.show(block=False)
 
+def play_one(env, model, eps, gamma):
+    state = env.reset()
+    done = False
+    totalreward = 0
+    global tau
+
+    while not done:
+
+        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
+            action = 0
+        else:
+            action = dqnetwork.sample_action(state, eps)
+
+        # state = np.array(state).reshape(-1, 8)
+        # print('Network pred:', sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: state}))
+        # print('Target  pred:', sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs: state}))
+
+        next_state, reward, done, info = env.step(action)
+        totalreward += reward
+        last_sequence = (state, action, reward, next_state, done)
+        memory.append(last_sequence)
+
+        state = next_state
+
+        if len(memory) > 500:
+            minibatch = random.sample(memory, minibatch_size)
+
+            # Combined Experience Replay
+            if CER:
+                minibatch.append(last_sequence)
+
+            dqnetwork.train(minibatch)
+
+        tau += 1
+
+
+        if tau > tau_max:
+            update_target = update_target_graph()
+            sess.run(update_target)
+            tau = 0
+            print("Model updated")
+
+        if render == True:
+            env.render()
+
+
+    logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
+    return totalreward
+
+def replay(model, num):
+    totalrewards = np.empty(replay_count)
+
+    for game in range(num):
+        observation = env.reset()
+        game_score = 0
+        done = False
+
+        while not done:
+            if observation[6] == 1 and observation[7] == 1 and observation[4] < 0.18:
+                action = 0
+            else:
+                observation = observation.reshape(-1, 8)
+                action = np.argmax(model.predict(observation))
+                #action = np.argmax(sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: observation}))
+
+            observation, reward, done, info = env.step(action)
+            game_score += reward
+
+            env.render()
+
+        print('total game score: {}'.format(game_score))
+        totalrewards[game] = game_score
+        if game % 10 == 0 and game > 0:
+            output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
+            print(output)
+
+def log_parameters():
+    #logfile.write(str(model.model.get_train_vars()))
+    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
+    logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps, eps_decay))
+    logfile.write(
+        'Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
+    if nn_dropout:
+        logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
+    else:
+        logfile.write('No Dropout\n\n')
+
+    logfile.flush()
+
+# This function helps us to copy one set of variables to another
+# In our case we use it when we want to copy the parameters of DQN to Target_network
+# Thanks of the very good implementation of Arthur Juliani https://github.com/awjuliani
+def update_target_graph():
+    # Get the parameters of our DQNNetwork
+    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork")
+
+    # Get the parameters of our Target_network
+    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork_target")
+
+    op_holder = []
+
+    # Update our target_network parameters with DQNNetwork parameters
+    for from_var, to_var in zip(from_vars, to_vars):
+        op_holder.append(to_var.assign(from_var))
+
+    return op_holder
 
 class DQNet:
     def __init__(self, name, env=None, target=False):
@@ -187,6 +293,8 @@ class DQNet:
 
             return prediction
 
+###################FUNCTIONS&CLASSES############################################
+
 # Reset the graph
 tf.reset_default_graph()
 
@@ -196,128 +304,27 @@ dqnetwork = DQNet(name='dqnetwork', env=env)
 # Instantiate Target DQNetwork
 dqnetwork_target = DQNet(name='dqnetwork_target', env=env, target=True)
 
-# This function helps us to copy one set of variables to another
-# In our case we use it when we want to copy the parameters of DQN to Target_network
-# Thanks of the very good implementation of Arthur Juliani https://github.com/awjuliani
-def update_target_graph():
-    # Get the parameters of our DQNNetwork
-    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork")
-
-    # Get the parameters of our Target_network
-    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork_target")
-
-    op_holder = []
-
-    # Update our target_network parameters with DQNNetwork parameters
-    for from_var, to_var in zip(from_vars, to_vars):
-        op_holder.append(to_var.assign(from_var))
-
-    return op_holder
-
 saver = tf.train.Saver()
 
-def play_one(env, model, eps, gamma):
-    state = env.reset()
-    done = False
-    totalreward = 0
-    global tau
-
-    while not done:
-
-        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
-            action = 0
-        else:
-            action = dqnetwork.sample_action(state, eps)
-
-        # state = np.array(state).reshape(-1, 8)
-        # print('Network pred:', sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: state}))
-        # print('Target  pred:', sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs: state}))
-
-        next_state, reward, done, info = env.step(action)
-        totalreward += reward
-        last_sequence = (state, action, reward, next_state, done)
-        memory.append(last_sequence)
-
-        state = next_state
-
-        if len(memory) > 500:
-            minibatch = random.sample(memory, minibatch_size)
-
-            # Combined Experience Replay
-            if CER:
-                minibatch.append(last_sequence)
-
-            dqnetwork.train(minibatch)
-
-        tau += 1
-
-
-        if tau > tau_max:
-            update_target = update_target_graph()
-            sess.run(update_target)
-            tau = 0
-            print("Model updated")
-
-        if render == True:
-            env.render()
-
-
-    logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
-    return totalreward
-
-def replay(model, num):
-    totalrewards = np.empty(replay_count)
-
-    for game in range(num):
-        observation = env.reset()
-        game_score = 0
-        done = False
-
-        while not done:
-            if observation[6] == 1 and observation[7] == 1 and observation[4] < 0.18:
-                action = 0
-            else:
-                observation = observation.reshape(-1, 8)
-                action = np.argmax(model.predict(observation))
-
-            observation, reward, done, info = env.step(action)
-            game_score += reward
-
-            env.render()
-
-        print('total game score: {}'.format(game_score))
-        totalrewards[game] = game_score
-        if game % 10 == 0 and game > 0:
-            output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
-            print(output)
-
 if load_model:
-    with tf.Session() as sess:
+    # Not worth using GPU for replaying model
+    config_replay = tf.ConfigProto(device_count={'GPU': 0})
+
+    with tf.Session(config=config_replay) as sess:
         sess.run(tf.global_variables_initializer())
 
         saver.restore(sess, modelload_name)
 
         replay(dqnetwork, replay_count)
 
+        exit()
+
 totalrewards = np.empty(N)
 costs = np.empty(N)
 
-def log_parameters():
-    #logfile.write(str(model.model.get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
-    logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps_factor,eps_decay))
-    logfile.write(
-        'Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
-    if nn_dropout:
-        logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
-    else:
-        logfile.write('No Dropout\n\n')
-
-    logfile.flush()
-
 log_parameters()
 
-with tf.Session() as sess:
+with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
 
     for n in range(N):
