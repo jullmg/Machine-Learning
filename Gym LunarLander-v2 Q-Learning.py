@@ -33,13 +33,14 @@ import os
 import math
 import random
 from collections import deque
-#import matplotlib.pyplot as plt
-
+import matplotlib.pyplot as plt
 
 # Pre-flight parameters
 logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
 modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_10'
+
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-1850'
+
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
@@ -49,7 +50,9 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
+
 logfile.write('\n')
+
 
 save_model = True
 load_model = False
@@ -70,6 +73,7 @@ break_reward = 205
 
 lr = 0.001
 N = 100000
+
 eps = 1
 eps_decay = 0.995
 eps_min = 0.1
@@ -85,14 +89,18 @@ input_size = env.observation_space.shape[0]
 output_size = env.action_space.n
 t0 = time.time()
 
-def plot_running_avg(totalrewards):
-    N = len(totalrewards)
-    running_avg = np.empty(N)
-    for t in range(N):
-        running_avg[t] = totalrewards[max(0, t-100):(t+1)].mean()
+def plot_moving_avg(totalrewards, qty):
+    Num = len(totalrewards)
+    running_avg = np.empty(Num)
+    for t in range(Num):
+        running_avg[t] = totalrewards[max(0, t-qty):(t+1)].mean()
+
     plt.plot(running_avg)
     plt.title("Running Average")
-    plt.show()
+    #plt.draw()
+    #plt.show()
+    plt.show(block=False)
+
 
 class DQNet:
     def __init__(self, name, env=None, target=False):
@@ -184,10 +192,10 @@ tf.reset_default_graph()
 # Instantiate DQNetwork
 dqnetwork = DQNet(name='dqnetwork', env=env)
 
+
 # Instantiate Target DQNetwork
 dqnetwork_target = DQNet(name='dqnetwork_target', env=env, target=True)
 
-saver = tf.train.Saver()
 
 # This function helps us to copy one set of variables to another
 # In our case we use it when we want to copy the parameters of DQN to Target_network
@@ -206,6 +214,8 @@ def update_target_graph():
         op_holder.append(to_var.assign(from_var))
 
     return op_holder
+
+saver = tf.train.Saver()
 
 def play_one(env, model, eps, gamma):
     state = env.reset()
@@ -332,11 +342,6 @@ with tf.Session() as sess:
 
         if reward_avg_last35 >= break_reward:
             break
-
-#plt.plot(totalrewards)
-#plt.title("Rewards")
-#plt.show()
-#plot_running_avg(totalrewards)
 
 logfile.close()
 debugfile.close()
