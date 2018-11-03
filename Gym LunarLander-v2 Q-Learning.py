@@ -16,7 +16,6 @@ Actions :
 
 To do :
 Plot graphs
-save and load model
 Integrate dual deep network (target network)
 Integrate Combined Experience Replay (CER)
 Integrade Priorized Experience Replay (PER)
@@ -29,21 +28,19 @@ import gym
 from gym import wrappers
 import numpy as np
 import tensorflow as tf
-import tflearn
-from tflearn.layers.core import input_data, dropout, fully_connected
-from tflearn.layers.estimator import regression
 import time
 import os
 import math
 import random
 from collections import deque
-#import matplotlib.pyplot as plt
-
+import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_09.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_09'
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_09-5200.meta'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_10'
+
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-1850'
+
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
@@ -53,7 +50,9 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('testing with CER\n')
+
+logfile.write('\n')
+
 
 save_model = True
 load_model = False
@@ -65,11 +64,16 @@ nn_layer_1_units = 512
 nn_output_activation = 'linear'
 nn_dropout = False
 nn_dropout_factor = 0.95
+
+tau = 0
+tau_max = 10000
+
 epochs = 1
 break_reward = 205
 
-lr = 0.0005
+lr = 0.001
 N = 100000
+
 eps = 1
 eps_decay = 0.995
 eps_min = 0.1
@@ -85,40 +89,44 @@ input_size = env.observation_space.shape[0]
 output_size = env.action_space.n
 t0 = time.time()
 
-def plot_running_avg(totalrewards):
-    N = len(totalrewards)
-    running_avg = np.empty(N)
-    for t in range(N):
-        running_avg[t] = totalrewards[max(0, t-100):(t+1)].mean()
+def plot_moving_avg(totalrewards, qty):
+    Num = len(totalrewards)
+    running_avg = np.empty(Num)
+    for t in range(Num):
+        running_avg[t] = totalrewards[max(0, t-qty):(t+1)].mean()
+
     plt.plot(running_avg)
     plt.title("Running Average")
-    plt.show()
+    #plt.draw()
+    #plt.show()
+    plt.show(block=False)
+
 
 class DQNet:
-    def __init__(self, name, env=None):
+    def __init__(self, name, env=None, target=False):
         self.name = name
         self.env = env
 
-        #with tf.variable_scope(self.name):
-        self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
+        with tf.variable_scope(self.name):
+            self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
 
-        self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
+            self.hiddenlayer1 = tf.layers.dense(self.inputs, nn_layer_1_units, activation=tf.nn.relu)
 
-        self.hiddenlayer1 = tf.layers.dense(self.inputs, nn_layer_1_units, activation=tf.nn.relu)
+            self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
-        self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
+            if not target:
+                self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
-        #self.loss = tf.reduce_mean(tf.squared_difference(self.target_Q, self.outputs))
-        #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-        self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
+                #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
+                self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
 
-        #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
+                #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
-        # Gradient Clipping -5,5
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-        self.gvs = self.optimizer.compute_gradients(self.loss)
-        self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
-        self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
+                # Gradient Clipping -5,5
+                self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
+                self.gvs = self.optimizer.compute_gradients(self.loss)
+                self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
+                self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
 
         '''
         self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
@@ -147,17 +155,15 @@ class DQNet:
 
             if not done:
                 #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
-                target_Qvalue = reward + gamma * np.max(sess.run(self.outputs, feed_dict={self.inputs:next_state})) # use np.amax?
+                target_Qvalue = reward + gamma * np.max(sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs:next_state})) # use np.amax?
                 #print('target', target)
 
             #target_f = self.predict(state)
             target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
-            #
 
             target_f[0][action] = target_Qvalue
 
             y.append(target_f)
-
 
         y = np.array(y).reshape(-1, 4)
         x = np.array(x).reshape(-1, 8)
@@ -167,8 +173,6 @@ class DQNet:
         # print(y)
         #print(target_Q)
         #print(outputs)
-
-
 
     def sample_action(self, s, eps):
         s = np.array(s).reshape(-1, 8)
@@ -188,33 +192,67 @@ tf.reset_default_graph()
 # Instantiate DQNetwork
 dqnetwork = DQNet(name='dqnetwork', env=env)
 
+
+# Instantiate Target DQNetwork
+dqnetwork_target = DQNet(name='dqnetwork_target', env=env, target=True)
+
+
+# This function helps us to copy one set of variables to another
+# In our case we use it when we want to copy the parameters of DQN to Target_network
+# Thanks of the very good implementation of Arthur Juliani https://github.com/awjuliani
+def update_target_graph():
+    # Get the parameters of our DQNNetwork
+    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork")
+
+    # Get the parameters of our Target_network
+    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork_target")
+
+    op_holder = []
+
+    # Update our target_network parameters with DQNNetwork parameters
+    for from_var, to_var in zip(from_vars, to_vars):
+        op_holder.append(to_var.assign(from_var))
+
+    return op_holder
+
+saver = tf.train.Saver()
+
 def play_one(env, model, eps, gamma):
     state = env.reset()
     done = False
     totalreward = 0
+    global tau
 
     while not done:
 
-        if state[6] == 1 and state[7] == 1 and state[4] < 0.18:
+        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
             action = 0
         else:
             action = dqnetwork.sample_action(state, eps)
 
+        # state = np.array(state).reshape(-1, 8)
+        # print('Network pred:', sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: state}))
+        # print('Target  pred:', sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs: state}))
+
         next_state, reward, done, info = env.step(action)
         totalreward += reward
 
-        last_sequence = (state, action, reward, next_state, done)
-        memory.append(last_sequence)
+        memory.append((state, action, reward, next_state, done))
 
         state = next_state
 
 
         if len(memory) > 5000:
             minibatch = random.sample(memory, minibatch_size)
-            # Appending last event for Combined Experience Replay
-            minibatch.append(last_sequence)
-
             dqnetwork.train(minibatch)
+
+        tau += 1
+
+        if tau > tau_max:
+            update_target = update_target_graph()
+            sess.run(update_target)
+            tau = 0
+            print("Model updated")
 
         if render == True:
             env.render()
@@ -236,11 +274,11 @@ def replay(model, num):
                 action = 0
             else:
                 observation = observation.reshape(-1, 8)
-                print(model.predict(observation))
                 action = np.argmax(model.predict(observation))
 
             observation, reward, done, info = env.step(action)
             game_score += reward
+
             env.render()
 
         print('total game score: {}'.format(game_score))
@@ -252,14 +290,10 @@ def replay(model, num):
 if load_model:
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        saver = tf.train.import_meta_graph(modelload_name)
-        saver.restore(sess, tf.train.latest_checkpoint('./LunarLander_Models/'))
-        print(saver._var_list)
-        exit()
-        graph = tf.get_default_graph()
-        graph.get_tensor_by_name("op_to_restore:0")
+
+        saver.restore(sess, modelload_name)
+
         replay(dqnetwork, replay_count)
-        exit()
 
 totalrewards = np.empty(N)
 costs = np.empty(N)
@@ -281,7 +315,7 @@ log_parameters()
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
-    saver = tf.train.Saver()
+
 
     for n in range(N):
         logfile.flush()
@@ -295,26 +329,19 @@ with tf.Session() as sess:
         totalreward = play_one(env, dqnetwork, eps, gamma)
         totalrewards[n] = totalreward
 
+        reward_avg_last35 = totalrewards[max(0, n - 35):(n + 1)].mean()
+        reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
+
         if n > 1 and n % 10 == 0:
-            if save_model and n % 100 == 0:
+            if save_model:
                 saver.save(sess, modelsave_name, global_step=n)
 
-            reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
             tx = time.time() - t0
             output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
-            if reward_avg_last100 >= break_reward:
-                break
 
-
-    # If average totalreward of last 100 games is >=200 stop
-    #if totalrewards[max(0, n - 100):(n + 1)].mean() >= 200:
-    #    break
-
-#plt.plot(totalrewards)
-#plt.title("Rewards")
-#plt.show()
-#plot_running_avg(totalrewards)
+        if reward_avg_last35 >= break_reward:
+            break
 
 logfile.close()
 debugfile.close()
