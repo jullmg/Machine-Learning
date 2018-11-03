@@ -67,7 +67,7 @@ nn_dropout = False
 nn_dropout_factor = 0.95
 
 tau = 0
-tau_max = 10000
+tau_max = 5000
 
 epochs = 1
 break_reward = 205
@@ -240,7 +240,7 @@ def play_one(env, model, eps, gamma):
 
         state = next_state
 
-        if len(memory) > 5000:
+        if len(memory) > 500:
             minibatch = random.sample(memory, minibatch_size)
 
             # Combined Experience Replay
