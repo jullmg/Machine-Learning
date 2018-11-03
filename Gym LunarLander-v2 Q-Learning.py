@@ -30,10 +30,9 @@ import numpy as np
 import tensorflow as tf
 import time
 import os
-import math
 import random
 from collections import deque
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 # Pre-flight parameters
 logfile_name = './LunarLander_Logs/LunarLander_Qlearn_10.log'
@@ -58,6 +57,8 @@ save_model = True
 load_model = False
 replay_count = 1000
 render = False
+
+CER = True
 
 nn_layer_1_activation = 'relu'
 nn_layer_1_units = 512
@@ -192,10 +193,8 @@ tf.reset_default_graph()
 # Instantiate DQNetwork
 dqnetwork = DQNet(name='dqnetwork', env=env)
 
-
 # Instantiate Target DQNetwork
 dqnetwork_target = DQNet(name='dqnetwork_target', env=env, target=True)
-
 
 # This function helps us to copy one set of variables to another
 # In our case we use it when we want to copy the parameters of DQN to Target_network
@@ -235,18 +234,22 @@ def play_one(env, model, eps, gamma):
         # print('Target  pred:', sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs: state}))
 
         next_state, reward, done, info = env.step(action)
-        totalreward += reward
-
-        memory.append((state, action, reward, next_state, done))
+        last_sequence = (state, action, reward, next_state, done)
+        memory.append(last_sequence)
 
         state = next_state
 
-
         if len(memory) > 5000:
             minibatch = random.sample(memory, minibatch_size)
+
+            # Combined Experience Replay
+            if CER:
+                minibatch.append(last_sequence)
+
             dqnetwork.train(minibatch)
 
         tau += 1
+        totalreward += reward
 
         if tau > tau_max:
             update_target = update_target_graph()
@@ -316,10 +319,8 @@ log_parameters()
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
 
-
     for n in range(N):
         logfile.flush()
-
 
         if eps > eps_min:
             eps *= eps_decay
