@@ -53,6 +53,7 @@ save_model = True
 load_model = False
 replay_count = 1000
 render = False
+# 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
