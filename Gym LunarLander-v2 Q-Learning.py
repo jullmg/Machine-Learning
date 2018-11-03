@@ -53,7 +53,7 @@ save_model = True
 load_model = False
 replay_count = 1000
 render = False
-# 1 to use gpu 0 to use CPU
+# 1 to use gpu, 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
@@ -69,7 +69,7 @@ tau = 0
 tau_max = 5000
 
 epochs = 1
-break_reward = 205
+break_reward = 215
 
 lr = 0.001
 N = 10000
