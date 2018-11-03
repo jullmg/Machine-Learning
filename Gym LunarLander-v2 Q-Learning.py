@@ -234,6 +234,7 @@ def play_one(env, model, eps, gamma):
         # print('Target  pred:', sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs: state}))
 
         next_state, reward, done, info = env.step(action)
+        totalreward += reward
         last_sequence = (state, action, reward, next_state, done)
         memory.append(last_sequence)
 
@@ -249,7 +250,7 @@ def play_one(env, model, eps, gamma):
             dqnetwork.train(minibatch)
 
         tau += 1
-        totalreward += reward
+
 
         if tau > tau_max:
             update_target = update_target_graph()
