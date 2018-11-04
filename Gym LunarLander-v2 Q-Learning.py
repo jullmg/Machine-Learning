@@ -236,11 +236,6 @@ class DQNet:
             if not target:
 
                 self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
-                # Single Qvalue predicted for prefered action
-                self.target_Qvalue = tf.placeholder(tf.float32, [None], name="target_Qvalue")
-
-                # The loss is modified because of PER
-                self.absolute_errors = tf.abs(self.target_Qvalue - self.outputs)  # for updating Sumtree
 
                 #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
                 self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
@@ -264,8 +259,8 @@ class DQNet:
         return prediction
 
     def train(self, tree_idx, batch):
-
         y = []
+        absolute_errors = []
 
         x = [each[0][0] for each in batch]
         actions = [each[0][1] for each in batch]
@@ -288,6 +283,11 @@ class DQNet:
             #target_f = self.predict(state)
             target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
 
+            predicted_value = target_f[0][actions[n]]
+
+            absolute_error = abs(predicted_value - target_Qvalue)
+            absolute_errors.append(absolute_error)
+
             target_f[0][actions[n]] = target_Qvalue
 
             y.append(target_f)
@@ -295,9 +295,7 @@ class DQNet:
         y = np.array(y).reshape(-1, 4)
         x = np.array(x).reshape(-1, 8)
 
-        _, loss, target_Q, outputs, absolute_errors = sess.run([self.train_op, self.loss, self.target_Q, self.outputs, self.absolute_errors], feed_dict={self.inputs: x, self.target_Q: y, self.target_Qvalue: target_Qvalue})
-
-        #print('absolute errors:', absolute_errors)
+        _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
 
         # Update priority
         per_memory.batch_update(tree_idx, absolute_errors)
@@ -549,13 +547,9 @@ class Memory(object):  # stored as ( s, a, r, s_ ) in SumTree
     """
 
     def batch_update(self, tree_idx, abs_errors):
-
-        print(abs_errors)
-        abs_errors += self.PER_e  # convert to abs and avoid 0
+        #abs_errors += self.PER_e  # convert to abs and avoid 0 (never happens)
         clipped_errors = np.minimum(abs_errors, self.absolute_error_upper)
         ps = np.power(clipped_errors, self.PER_a)
-
-        exit()
 
         for ti, p in zip(tree_idx, ps):
             self.tree.update(ti, p)
