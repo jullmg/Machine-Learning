@@ -35,8 +35,8 @@ from collections import deque
 #import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_test01.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_test01'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_test02.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_test02'
 modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-10'
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
@@ -47,7 +47,7 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('\n')
+logfile.write('With no PER\n')
 
 save_model = True
 load_model = False
