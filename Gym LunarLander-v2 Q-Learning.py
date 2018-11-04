@@ -145,7 +145,7 @@ def play_one(env, model, eps, gamma):
                 minibatch.append(last_sequence)
 
 
-            dqnetwork.train(minibatch)
+            dqnetwork.train(tree_idx, minibatch)
 
         tau += 1
 
@@ -234,7 +234,13 @@ class DQNet:
             self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
 
             if not target:
+
                 self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
+                # Single Qvalue predicted for prefered action
+                self.target_Qvalue = tf.placeholder(tf.float32, [None], name="target_Qvalue")
+
+                # The loss is modified because of PER
+                self.absolute_errors = tf.abs(self.target_Qvalue - self.outputs)  # for updating Sumtree
 
                 #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
                 self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
@@ -257,7 +263,7 @@ class DQNet:
         prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
         return prediction
 
-    def train(self, batch):
+    def train(self, tree_idx, batch):
 
         y = []
 
@@ -289,11 +295,12 @@ class DQNet:
         y = np.array(y).reshape(-1, 4)
         x = np.array(x).reshape(-1, 8)
 
-        #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
-        _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
-        # print(y)
-        #print(target_Q)
-        #print(outputs)
+        _, loss, target_Q, outputs, absolute_errors = sess.run([self.train_op, self.loss, self.target_Q, self.outputs, self.absolute_errors], feed_dict={self.inputs: x, self.target_Q: y, self.target_Qvalue: target_Qvalue})
+
+        #print('absolute errors:', absolute_errors)
+
+        # Update priority
+        per_memory.batch_update(tree_idx, absolute_errors)
 
     def sample_action(self, s, eps):
         s = np.array(s).reshape(-1, 8)
@@ -543,9 +550,12 @@ class Memory(object):  # stored as ( s, a, r, s_ ) in SumTree
 
     def batch_update(self, tree_idx, abs_errors):
 
+        print(abs_errors)
         abs_errors += self.PER_e  # convert to abs and avoid 0
         clipped_errors = np.minimum(abs_errors, self.absolute_error_upper)
         ps = np.power(clipped_errors, self.PER_a)
+
+        exit()
 
         for ti, p in zip(tree_idx, ps):
             self.tree.update(ti, p)
