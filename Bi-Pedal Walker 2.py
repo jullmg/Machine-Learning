@@ -139,14 +139,23 @@ class DQNet:
 
             self.critic_hiddenlayer1 = tf.layers.dense(self.critic_inputs, 1024, activation=tf.nn.relu)
 
-            self.outputs = tf.layers.dense(self.hiddenlayer1, output_size, activation=tf.nn.tanh)
+            self.critic_outputs = tf.layers.dense(self.critic_hiddenlayer1, output_size, activation=tf.nn.tanh)
 
-
+            self.critic_loss =
 
 
         # Actor build
         if actor:
             with tf.variable_scope(self.name):
+                self.actor__state_inputs = tf.placeholder(tf.float32, [None, input_size], name="actor_state_inputs")
+
+                self.actor_action_inputs = tf.placeholder(tf.float32, [None, output_size], name="actor_state_inputs")
+
+                self.actor_state_hiddenlayer1 = tf.layers.dense(self.actor_state_inputs, 1024, activation=tf.nn.relu)
+
+                self.actor_action_hiddenlayer1 = tf.layers.dense(self.actor_action_inputs, 1024, activation=tf.nn.relu)
+
+                self.mergedlayer = tf.concat([self.actor_state_hiddenlayer1, self.actor_action_hiddenlayer1], 0)
 
                 if not target:
                     self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
