@@ -1,15 +1,10 @@
 import gym
-from gym import wrappers
 import numpy as np
 import tensorflow as tf
-import tflearn
-from tflearn.layers.core import input_data, dropout, fully_connected
-from tflearn.layers.estimator import regression
 import time
 import os
-import math
 import random
-#import matplotlib.pyplot as plt
+from collections import deque
 
 save_model = False
 load_model = False
@@ -39,7 +34,7 @@ memory = deque(maxlen=500000)
 
 env = gym.make('BipedalWalker-v2')
 input_size = env.observation_space.shape[0]
-output_size = env.action_space.n
+output_size = 8
 t0 = time.time()
 
 
@@ -66,7 +61,18 @@ def play_one(env, model, eps, gamma):
 
     while not done:
 
-        action = dqnetwork.sample_action(state, eps)
+        state = np.array(state).reshape(-1, input_size)
+        # np.random (0.01-0.99)
+        if np.random.random() < eps:
+            action = self.env.action_space.sample()
+        else:
+            # prediction = np.argmax(sess.run(self.outputs, feed_dict={self.inputs: s}))
+            action = sess.run(self.actor_outputs, feed_dict={self.actor_inputs: state})
+
+
+        print(action)
+
+        exit()
 
         next_state, reward, done, info = env.step(action)
         totalreward += reward
@@ -133,35 +139,40 @@ class DQNet:
         self.name = name
         self.env = env
 
-        # Critic build
-        if critic:
-            self.critic_inputs = tf.placeholder(tf.float32,[None, input_size], name="critic_inputs")
+        # Actor build
+        if actor:
+            self.actor_inputs = tf.placeholder(tf.float32,[None, input_size], name="actor_inputs")
 
-            self.critic_hiddenlayer1 = tf.layers.dense(self.critic_inputs, 1024, activation=tf.nn.relu)
+            self.actor_l1 = tf.layers.dense(self.actor_inputs, 1024, activation=tf.nn.relu)
 
-            self.critic_outputs = tf.layers.dense(self.critic_hiddenlayer1, output_size, activation=tf.nn.tanh)
+            self.actor_outputs = tf.layers.dense(self.actor_l1, output_size, activation=tf.nn.tanh)
 
-            self.critic_loss =
+            self.actor_loss = tf.losses.hinge_loss(self.actor_outputs, self.suggestion)
 
 
         # Actor build
-        if actor:
+        if critic:
             with tf.variable_scope(self.name):
-                self.actor__state_inputs = tf.placeholder(tf.float32, [None, input_size], name="actor_state_inputs")
+                self.critic_state_inputs = tf.placeholder(tf.float32, [None, input_size], name="critic_state_inputs")
 
-                self.actor_action_inputs = tf.placeholder(tf.float32, [None, output_size], name="actor_state_inputs")
+                self.critic_action_inputs = tf.placeholder(tf.float32, [None, output_size], name="critic_state_inputs")
 
-                self.actor_state_hiddenlayer1 = tf.layers.dense(self.actor_state_inputs, 1024, activation=tf.nn.relu)
+                self.critic_state_l1 = tf.layers.dense(self.critic_state_inputs, 1024, activation=tf.nn.relu)
 
-                self.actor_action_hiddenlayer1 = tf.layers.dense(self.actor_action_inputs, 1024, activation=tf.nn.relu)
+                self.critic_action_l1 = tf.layers.dense(self.critic_action_inputs, 1024, activation=tf.nn.relu)
 
-                self.mergedlayer = tf.concat([self.actor_state_hiddenlayer1, self.actor_action_hiddenlayer1], 0)
+                self.mergedlayer = tf.concat([self.critic_state_l1, self.critic_action_l1], 0)
+
+                self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 2048, activation=tf.nn.relu)
+
+                self.critic_output = tf.layers.dense(self.mergedlayer_l1, 1)
 
                 if not target:
+                    # For training critic
                     self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
                     #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-                    self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
+                    self.loss = tf.losses.huber_loss(self.target_Q, self.critic_output)
 
                     #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
@@ -169,7 +180,7 @@ class DQNet:
                     self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
                     self.gvs = self.optimizer.compute_gradients(self.loss)
                     self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
-                    self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
+                    self.critic_train_op = self.optimizer.apply_gradients(self.capped_gvs)
 
         '''
         self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
@@ -213,22 +224,7 @@ class DQNet:
 
         #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
         _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
-        # print(y)
-        #print(target_Q)
-        #print(outputs)
 
-    def sample_action(self, s, eps):
-        s = np.array(s).reshape(-1, input_size)
-        # np.random (0.01-0.99)
-        #print(np.max(self.predict(s)))
-
-        if np.random.random() < eps:
-            return self.env.action_space.sample()
-        else:
-            #prediction = np.argmax(sess.run(self.outputs, feed_dict={self.inputs: s}))
-            prediction = sess.run(self.critic_outputs, feed_dict={self.critic_inputs: s}))
-
-            return prediction
 
 ###################FUNCTIONS&CLASSES############################################
 
@@ -243,7 +239,7 @@ nn_critic = DQNet(name='nn_critic', env=env)
 # Instantiate Critic's Target DQNetwork
 nn_critic_target = DQNet(name='nn_critic_target', env=env, target=True)
 
-saver = tf.train.Saver()
+#saver = tf.train.Saver()
 
 totalrewards = np.empty(N)
 
