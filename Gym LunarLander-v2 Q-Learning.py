@@ -31,13 +31,16 @@ import tensorflow as tf
 import time
 import os
 import random
+import readchar
 from collections import deque
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_test02.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Learning_test02'
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-10'
+
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_noPER_7.log'
+modelsave_name = './LunarLander_Models/LunarLander_Q_Qlearn_noPER_7'
+modelload_name = './LunarLander_Models/LunarLander_Qlearn_withPER_2-510'
+
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
 try:
@@ -47,7 +50,7 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('With no PER\n')
+logfile.write('With PER\n')
 
 save_model = True
 load_model = False
@@ -69,10 +72,11 @@ tau = 0
 tau_max = 5000
 
 epochs = 1
-break_reward = 205
+
+break_reward = 235
 
 lr = 0.001
-N = 10000
+N = 1000
 
 eps = 1
 eps_decay = 0.995
@@ -101,7 +105,7 @@ def plot_moving_avg(totalrewards, qty):
     plt.title("Running Average")
     #plt.draw()
     #plt.show()
-    plt.show(block=False)
+    plt.show()
 
 def play_one(env, model, eps, gamma):
     state = env.reset()
@@ -339,7 +343,7 @@ with tf.Session(config=config) as sess:
         totalreward = play_one(env, dqnetwork, eps, gamma)
         totalrewards[n] = totalreward
 
-        reward_avg_last35 = totalrewards[max(0, n - 35):(n + 1)].mean()
+        reward_avg_last50 = totalrewards[max(0, n - 50):(n + 1)].mean()
         reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
 
         if n > 1 and n % 10 == 0:
@@ -350,8 +354,10 @@ with tf.Session(config=config) as sess:
             output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
 
-        if reward_avg_last35 >= break_reward:
+        if reward_avg_last50 >= break_reward:
             break
+
+plot_moving_avg(totalrewards, 100)
 
 logfile.close()
 debugfile.close()
