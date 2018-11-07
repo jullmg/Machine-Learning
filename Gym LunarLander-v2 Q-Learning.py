@@ -36,9 +36,8 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_noPER_7.log'
-modelsave_name = './LunarLander_Models/LunarLander_Q_Qlearn_noPER_7'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_sanspattes-3.log'
+modelsave_name = './LunarLander_Models/LunarLander_Qlearn_sanspattes-3'
 modelload_name = './LunarLander_Models/LunarLander_Qlearn_withPER_2-510'
 
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
@@ -59,6 +58,7 @@ render = False
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
+pattes_stop = False
 
 CER = True
 
@@ -115,7 +115,7 @@ def play_one(env, model, eps, gamma):
 
     while not done:
 
-        if state[6] == 1 and state[7] == 1 and state[4] < 0.1:
+        if pattes_stop and state[6] == 1 and state[7] == 1 and state[4] < 0.1:
             action = 0
         else:
             action = dqnetwork.sample_action(state, eps)
