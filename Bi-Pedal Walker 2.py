@@ -6,6 +6,21 @@ import os
 import random
 from collections import deque
 
+logfile_name = './testdelete.log'
+modelsave_name = './LunarLander_Models/LunarLander_Qlearn_sanspattes-01'
+modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-10'
+debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
+
+try:
+    logfile = open(logfile_name, 'w')
+    debugfile = open(debug_name, 'w')
+except FileNotFoundError:
+    os.mknod(FileNotFoundError.filename)
+    logfile = open(FileNotFoundError.filename, 'w')
+
+logfile.write('\n')
+
+
 save_model = False
 load_model = False
 replay_count = 1000
@@ -64,11 +79,11 @@ def play_one(env, model, eps, gamma):
         state = np.array(state).reshape(-1, input_size)
         # np.random (0.01-0.99)
         if np.random.random() < eps:
-            action = self.env.action_space.sample()
+            action = env.action_space.sample()
         else:
             # prediction = np.argmax(sess.run(self.outputs, feed_dict={self.inputs: s}))
-            action = sess.run(self.actor_outputs, feed_dict={self.actor_inputs: state})
-
+            action = sess.run(nn_actor.actor_outputs, feed_dict={self.actor_inputs: state})
+        action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
 
         print(action)
 
@@ -147,10 +162,10 @@ class DQNet:
 
             self.actor_outputs = tf.layers.dense(self.actor_l1, output_size, activation=tf.nn.tanh)
 
-            self.actor_loss = tf.losses.hinge_loss(self.actor_outputs, self.suggestion)
+            #self.actor_loss = tf.losses.hinge_loss(self.actor_outputs, self.suggestion)
 
 
-        # Actor build
+        # Critic build
         if critic:
             with tf.variable_scope(self.name):
                 self.critic_state_inputs = tf.placeholder(tf.float32, [None, input_size], name="critic_state_inputs")
@@ -169,18 +184,18 @@ class DQNet:
 
                 if not target:
                     # For training critic
-                    self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
+                    self.target_Q = tf.placeholder(tf.float32, [None, 1], name="target_Q")
 
                     #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
                     self.loss = tf.losses.huber_loss(self.target_Q, self.critic_output)
 
-                    #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
+                    self.critic_train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
                     # Gradient Clipping -5,5
-                    self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-                    self.gvs = self.optimizer.compute_gradients(self.loss)
-                    self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
-                    self.critic_train_op = self.optimizer.apply_gradients(self.capped_gvs)
+                    # self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
+                    # self.gvs = self.optimizer.compute_gradients(self.loss)
+                    # self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
+                    # self.critic_train_op = self.optimizer.apply_gradients(self.capped_gvs)
 
         '''
         self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
@@ -231,10 +246,10 @@ class DQNet:
 tf.reset_default_graph()
 
 # Instantiate Actor Network
-nn_actor = DQNet(name='nn_actor', env=env)
+nn_actor = DQNet(name='nn_actor', env=env, actor=True)
 
 # Instantiate Critic DQNetwork
-nn_critic = DQNet(name='nn_critic', env=env)
+nn_critic = DQNet(name='nn_critic', env=env, critic=True)
 
 # Instantiate Critic's Target DQNetwork
 nn_critic_target = DQNet(name='nn_critic_target', env=env, target=True)
