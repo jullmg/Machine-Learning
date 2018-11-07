@@ -56,6 +56,7 @@ save_model = False
 load_model = False
 replay_count = 1000
 render = True
+max_game_step = 200
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
@@ -75,11 +76,11 @@ eps = 1
 eps_decay = 0.995
 eps_min = 0.1
 
-minibatch_size = 20
+minibatch_size = 0
 memory = deque(maxlen=500000)
 
 env = gym.make('BipedalWalker-v2')
-input_size = env.observation_space.shape[0]
+input_size = env.observation_space.shape[0] #24
 output_size = 4
 t0 = time.time()
 
@@ -105,13 +106,13 @@ def play_one(env, model, eps, gamma):
     totalreward = 0
     global tau
 
-    while not done:
-
+    # while not done:
+    for t in range(max_game_step):
         state = np.array(state).reshape(-1, input_size)
         # np.random (0.01-0.99)
         if np.random.random() < eps:
             action = env.action_space.sample()
-            print(action)
+
         else:
             action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
             action = action[0]
@@ -144,6 +145,9 @@ def play_one(env, model, eps, gamma):
 
         if render == True:
             env.render()
+
+        if done:
+            break
 
 
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
@@ -188,17 +192,28 @@ class DQNet:
 
             self.actor_l1 = tf.layers.dense(self.actor_inputs, 1024, activation=tf.nn.relu)
 
-            self.actor_outputs = tf.layers.dense(self.actor_l1, output_size, activation=tf.nn.tanh)
+            self.actor_outputs = tf.layers.dense(self.actor_l1, 4, activation=tf.nn.tanh)
 
-            #self.actor_loss = tf.losses.hinge_loss(self.actor_outputs, self.suggestion)
+            #Training
+            self.actor_qvalue_input = tf.placeholder(tf.float32, [None, 1], name="actor_qvalue_input")
+
+
+            self.actor_corrected_action = tf.clip_by_value(tf.subtract(self.actor_outputs, self.actor_qvalue_input), -1, 1)
+
+
+            # self.actor_loss = tf.losses.hinge_loss(self.actor_outputs, self.actor_corrected_action)
+            self.actor_loss = tf.losses.huber_loss(self.actor_corrected_action, self.actor_outputs)
+
+            self.actor_train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.actor_loss)
+
 
 
         # Critic build
         if critic:
             with tf.variable_scope(self.name):
-                self.critic_state_inputs = tf.placeholder(tf.float32, [None, input_size], name="critic_state_inputs")
+                self.critic_state_inputs = tf.placeholder(tf.float32, [None, 24], name="critic_state_inputs")
 
-                self.critic_action_inputs = tf.placeholder(tf.float32, [None, output_size], name="critic_state_inputs")
+                self.critic_action_inputs = tf.placeholder(tf.float32, [None, 4], name="critic_action_inputs")
 
                 self.critic_state_l1 = tf.layers.dense(self.critic_state_inputs, 1024, activation=tf.nn.relu)
 
@@ -215,9 +230,9 @@ class DQNet:
                     self.target_Q = tf.placeholder(tf.float32, [None, 1], name="target_Q")
 
                     #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-                    self.loss = tf.losses.huber_loss(self.target_Q, self.critic_output)
+                    self.critic_loss = tf.losses.huber_loss(self.target_Q, self.critic_output)
 
-                    self.critic_train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
+                    self.critic_train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.critic_loss)
 
                     # Gradient Clipping -5,5
                     # self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
@@ -225,11 +240,6 @@ class DQNet:
                     # self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
                     # self.critic_train_op = self.optimizer.apply_gradients(self.capped_gvs)
 
-        '''
-        self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-        self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=0.05)
-        self.train_op = self.optimizer.minimize(self.loss)
-        '''
 
     def predict(self, observation):
         prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
@@ -240,11 +250,15 @@ class DQNet:
             pass
 
         else:
+
             x = []
+            actions = []
             y = []
+            TDerrors = []
 
             for state, action, reward, next_state, done in data:
                 x.append(state)
+                actions.append(action)
                 target_Qvalue = reward
 
 
@@ -253,24 +267,38 @@ class DQNet:
                 next_state = np.array(next_state).reshape(-1, input_size)
 
                 state = np.array(state).reshape(-1, input_size)
+                action = np.array(action).reshape(-1, output_size)
+
 
                 if not done:
                     target_action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
 
-                    target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs:next_state, nn_critic_target.critic_action_inputs:target_action})
+                    target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
                     target_Qvalue = reward + gamma * target_prediction
 
+                Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
 
-                Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs:state, self.critic_action_inputs:action})
+                # print('Qvalue', Qvalue)
+                # print('Qtarget', target_Qvalue)
+
+                #TD error is positive if the transition from S to S′ gave a greater reward R than the critic expected, and negative if it was smaller than the critic expected
+                TDerror = target_Qvalue - Qvalue
+                # print('TDerror', TDerror)
+                TDerrors.append(TDerror)
 
                 y.append(target_Qvalue)
 
             x = np.array(x).reshape(-1, input_size)
-            y = np.array(y).reshape(-1, 4)
+            y = np.array(y).reshape(-1, 1)
 
+            # Critic Training
+            _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: x, self.critic_action_inputs: actions, self.target_Q: y})
 
-            #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
-            _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
+            # Actor Training
+            _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs, nn_actor.actor_corrected_action], feed_dict={nn_actor.actor_inputs: x, nn_actor.actor_qvalue_input: y})
+            print('Actor outputs', actor_outputs)
+            print('Qvalue', y)
+            print('Actor correct', actor_corrected_action)
 
 
 ###################FUNCTIONS&CLASSES############################################
