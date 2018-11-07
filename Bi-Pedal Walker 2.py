@@ -1,3 +1,34 @@
+'''
+state = [
+self.hull.angle,        # Normal angles up to 0.5 here, but sure more is possible.
+2.0*self.hull.angularVelocity/FPS,
+0.3*vel.x*(VIEWPORT_W/SCALE)/FPS,  # Normalized to get -1..1 range
+0.3*vel.y*(VIEWPORT_H/SCALE)/FPS,
+self.joints[0].angle,   # This will give 1.1 on high up, but it's still OK (and there should be spikes on hiting the ground, that's normal too)
+self.joints[0].speed / SPEED_HIP,
+self.joints[1].angle + 1.0,
+self.joints[1].speed / SPEED_KNEE,
+1.0 if self.legs[1].ground_contact else 0.0,
+self.joints[2].angle,
+self.joints[2].speed / SPEED_HIP,
+self.joints[3].angle + 1.0,
+self.joints[3].speed / SPEED_KNEE,
+1.0 if self.legs[3].ground_contact else 0.0
+]
+
+
+self.joints[0].motorSpeed     = float(SPEED_HIP     * np.sign(action[0]))
+
+self.joints[1].motorSpeed     = float(SPEED_KNEE    * np.sign(action[1]))
+
+self.joints[2].motorSpeed     = float(SPEED_HIP     * np.sign(action[2]))
+
+self.joints[3].motorSpeed     = float(SPEED_KNEE    * np.sign(action[3]))
+
+
+
+'''
+
 import gym
 import numpy as np
 import tensorflow as tf
@@ -24,7 +55,7 @@ logfile.write('\n')
 save_model = False
 load_model = False
 replay_count = 1000
-render = False
+render = True
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
@@ -49,7 +80,7 @@ memory = deque(maxlen=500000)
 
 env = gym.make('BipedalWalker-v2')
 input_size = env.observation_space.shape[0]
-output_size = 8
+output_size = 4
 t0 = time.time()
 
 
@@ -80,33 +111,30 @@ def play_one(env, model, eps, gamma):
         # np.random (0.01-0.99)
         if np.random.random() < eps:
             action = env.action_space.sample()
+            print(action)
         else:
-            # prediction = np.argmax(sess.run(self.outputs, feed_dict={self.inputs: s}))
-            action = sess.run(nn_actor.actor_outputs, feed_dict={self.actor_inputs: state})
-        action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
-
-        print(action)
-
-        exit()
+            action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
+            action = action[0]
+        #action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
 
         next_state, reward, done, info = env.step(action)
+
         totalreward += reward
         last_sequence = (state, action, reward, next_state, done)
         memory.append(last_sequence)
 
         state = next_state
 
-        if len(memory) > 500:
+        if len(memory) > 50:
             minibatch = random.sample(memory, minibatch_size)
 
             # Combined Experience Replay
             if CER:
                 minibatch.append(last_sequence)
 
-            dqnetwork.train(minibatch)
+            nn_critic.train(minibatch)
 
         tau += 1
-
 
         if tau > tau_max:
             update_target = update_target_graph()
@@ -176,7 +204,7 @@ class DQNet:
 
                 self.critic_action_l1 = tf.layers.dense(self.critic_action_inputs, 1024, activation=tf.nn.relu)
 
-                self.mergedlayer = tf.concat([self.critic_state_l1, self.critic_action_l1], 0)
+                self.mergedlayer = tf.concat([self.critic_state_l1, self.critic_action_l1], 1)
 
                 self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 2048, activation=tf.nn.relu)
 
@@ -207,38 +235,42 @@ class DQNet:
         prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
         return prediction
 
-    def train(self, data):
-        x = []
-        y = []
+    def train(self, data, actor=False):
+        if actor:
+            pass
 
-        for state, action, reward, next_state, done in data:
-            x.append(state)
-            target_Qvalue = reward
+        else:
+            x = []
+            y = []
+
+            for state, action, reward, next_state, done in data:
+                x.append(state)
+                target_Qvalue = reward
 
 
-            #print('reward', reward)
+                #print('reward', reward)
 
-            next_state = np.array(next_state).reshape(-1, 8)
+                next_state = np.array(next_state).reshape(-1, input_size)
 
-            state = np.array(state).reshape(-1, 8)
+                state = np.array(state).reshape(-1, input_size)
 
-            if not done:
-                #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
-                target_Qvalue = reward + gamma * np.max(sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs:next_state})) # use np.amax?
-                #print('target', target)
+                if not done:
+                    target_action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
 
-            #target_f = self.predict(state)
-            target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
+                    target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs:next_state, nn_critic_target.critic_action_inputs:target_action})
+                    target_Qvalue = reward + gamma * target_prediction
 
-            target_f[0][action] = target_Qvalue
 
-            y.append(target_f)
+                Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs:state, self.critic_action_inputs:action})
 
-        y = np.array(y).reshape(-1, 4)
-        x = np.array(x).reshape(-1, 8)
+                y.append(target_Qvalue)
 
-        #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
-        _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
+            x = np.array(x).reshape(-1, input_size)
+            y = np.array(y).reshape(-1, 4)
+
+
+            #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
+            _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
 
 
 ###################FUNCTIONS&CLASSES############################################
@@ -252,7 +284,7 @@ nn_actor = DQNet(name='nn_actor', env=env, actor=True)
 nn_critic = DQNet(name='nn_critic', env=env, critic=True)
 
 # Instantiate Critic's Target DQNetwork
-nn_critic_target = DQNet(name='nn_critic_target', env=env, target=True)
+nn_critic_target = DQNet(name='nn_critic_target', env=env, target=True, critic=True)
 
 #saver = tf.train.Saver()
 
