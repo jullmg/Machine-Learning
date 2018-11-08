@@ -31,13 +31,12 @@ import tensorflow as tf
 import time
 import os
 import random
-import readchar
 from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_sanspattes-3.log'
-modelsave_name = './LunarLander_Models/LunarLander_Qlearn_sanspattes-3'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_sanspattes-8.log'
+modelsave_name = './LunarLander_Models/LunarLander_Qlearn_sanspattes-8'
 modelload_name = './LunarLander_Models/LunarLander_Qlearn_withPER_2-510'
 
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
@@ -58,7 +57,6 @@ render = False
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
-pattes_stop = False
 
 CER = True
 
@@ -73,10 +71,10 @@ tau_max = 5000
 
 epochs = 1
 
-break_reward = 235
+break_reward = 275
 
 lr = 0.001
-N = 1000
+N = 1500
 
 eps = 1
 eps_decay = 0.995
@@ -114,11 +112,7 @@ def play_one(env, model, eps, gamma):
     global tau
 
     while not done:
-
-        if pattes_stop and state[6] == 1 and state[7] == 1 and state[4] < 0.1:
-            action = 0
-        else:
-            action = dqnetwork.sample_action(state, eps)
+        action = dqnetwork.sample_action(state, eps)
 
         # state = np.array(state).reshape(-1, 8)
         # print('Network pred:', sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: state}))
