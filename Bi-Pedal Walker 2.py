@@ -56,7 +56,7 @@ save_model = False
 load_model = False
 replay_count = 1000
 render = True
-max_game_step = 200
+max_game_step = 650
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
@@ -72,7 +72,7 @@ lr = 0.001
 N = 10000
 gamma = 0.99
 
-eps = 1
+eps = 0.95
 eps_decay = 0.995
 eps_min = 0.1
 
@@ -108,6 +108,7 @@ def play_one(env, model, eps, gamma):
 
     # while not done:
     for t in range(max_game_step):
+
         state = np.array(state).reshape(-1, input_size)
         # np.random (0.01-0.99)
         if np.random.random() < eps:
@@ -116,9 +117,21 @@ def play_one(env, model, eps, gamma):
         else:
             action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
             action = action[0]
+
+            for i in range(output_size):
+                if action[i] >= 0.5:
+                    action[i] -= 0.5
+                    action[i] *= 2
+
+                elif action[i] < 0.5:
+                    action[i] *= (-2)
+
+                print('action: ', action)
+
         #action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
 
         next_state, reward, done, info = env.step(action)
+        print('reward:', reward)
 
         totalreward += reward
         last_sequence = (state, action, reward, next_state, done)
@@ -192,13 +205,13 @@ class DQNet:
 
             self.actor_l1 = tf.layers.dense(self.actor_inputs, 1024, activation=tf.nn.relu)
 
-            self.actor_outputs = tf.layers.dense(self.actor_l1, 4, activation=tf.nn.tanh)
+            self.actor_outputs = tf.layers.dense(self.actor_l1, 4, activation=tf.nn.sigmoid)
 
             #Training
             self.actor_qvalue_input = tf.placeholder(tf.float32, [None, 1], name="actor_qvalue_input")
 
 
-            self.actor_corrected_action = tf.clip_by_value(tf.subtract(self.actor_outputs, self.actor_qvalue_input), -1, 1)
+            self.actor_corrected_action = tf.clip_by_value(tf.add(self.actor_outputs, self.actor_qvalue_input), -1, 1)
 
 
             # self.actor_loss = tf.losses.hinge_loss(self.actor_outputs, self.actor_corrected_action)
@@ -275,6 +288,7 @@ class DQNet:
 
                     target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
                     target_Qvalue = reward + gamma * target_prediction
+                    print('targetQ: ', target_Qvalue)
 
                 Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
 
@@ -296,9 +310,9 @@ class DQNet:
 
             # Actor Training
             _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs, nn_actor.actor_corrected_action], feed_dict={nn_actor.actor_inputs: x, nn_actor.actor_qvalue_input: y})
-            print('Actor outputs', actor_outputs)
-            print('Qvalue', y)
-            print('Actor correct', actor_corrected_action)
+            # print('Actor outputs', actor_outputs)
+            # print('Qvalue', y)
+            # print('Actor correct', actor_corrected_action)
 
 
 ###################FUNCTIONS&CLASSES############################################

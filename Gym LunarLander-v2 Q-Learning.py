@@ -35,9 +35,10 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_sanspattes-8.log'
-modelsave_name = './LunarLander_Models/LunarLander_Qlearn_sanspattes-8'
-modelload_name = './LunarLander_Models/LunarLander_Qlearn_withPER_2-510'
+script_name = 'sans-pattes-8'
+logfile_name = './LunarLander_Logs/LunarLander_Qlearn_{}.log'.format(script_name)
+modelsave_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
+modelload_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
 
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
@@ -100,7 +101,7 @@ def plot_moving_avg(totalrewards, qty):
         running_avg[t] = totalrewards[max(0, t-qty):(t+1)].mean()
 
     plt.plot(running_avg)
-    plt.title("Running Average")
+    plt.title(script_name)
     #plt.draw()
     #plt.show()
     plt.show()
