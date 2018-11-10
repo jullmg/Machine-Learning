@@ -35,7 +35,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-script_name = 'sans-pattes-8'
+script_name = 'avec-pattes-5'
 logfile_name = './LunarLander_Logs/LunarLander_Qlearn_{}.log'.format(script_name)
 modelsave_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
 modelload_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
@@ -113,7 +113,11 @@ def play_one(env, model, eps, gamma):
     global tau
 
     while not done:
-        action = dqnetwork.sample_action(state, eps)
+
+        if state[6] == 1 and state[7] == 1 and state[4] < 0.18:
+            action = 0
+        else:
+            action = dqnetwork.sample_action(state, eps)
 
         # state = np.array(state).reshape(-1, 8)
         # print('Network pred:', sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: state}))
