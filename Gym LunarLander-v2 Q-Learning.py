@@ -35,7 +35,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-script_name = 'avec-pattes-5'
+script_name = 'avec-pattes-7'
 logfile_name = './LunarLander_Logs/LunarLander_Qlearn_{}.log'.format(script_name)
 modelsave_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
 modelload_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
@@ -92,6 +92,7 @@ input_size = env.observation_space.shape[0]
 output_size = env.action_space.n
 t0 = time.time()
 
+
 ###################FUNCTIONS&CLASSES############################################
 
 def plot_moving_avg(totalrewards, qty):
@@ -112,7 +113,7 @@ def play_one(env, model, eps, gamma):
     totalreward = 0
     global tau
 
-    while not done:
+    for step in range(env.spec.timestep_limit):
 
         if state[6] == 1 and state[7] == 1 and state[4] < 0.18:
             action = 0
@@ -150,6 +151,9 @@ def play_one(env, model, eps, gamma):
 
         if render == True:
             env.render()
+
+        if done:
+            break
 
 
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
