@@ -76,7 +76,7 @@ eps = 0.95
 eps_decay = 0.995
 eps_min = 0.1
 
-minibatch_size = 0
+minibatch_size = 32
 memory = deque(maxlen=500000)
 
 env = gym.make('BipedalWalker-v2')
@@ -84,7 +84,11 @@ input_size = env.observation_space.shape[0] #24
 output_size = 4
 t0 = time.time()
 
-
+# Ornstein-Uhlenbeck (Random noise) process for action exploration
+mu=0
+theta=0.15
+sigma=0.5
+noise = np.ones(output_size) * mu
 
 ###################FUNCTIONS&CLASSES############################################
 
@@ -100,7 +104,7 @@ def plot_moving_avg(totalrewards, qty):
     #plt.show()
     plt.show(block=False)
 
-def play_one(env, model, eps, gamma):
+def play_one(env, model, gamma):
     state = env.reset()
     done = False
     totalreward = 0
@@ -110,28 +114,16 @@ def play_one(env, model, eps, gamma):
     for t in range(max_game_step):
 
         state = np.array(state).reshape(-1, input_size)
-        # np.random (0.01-0.99)
-        if np.random.random() < eps:
-            action = env.action_space.sample()
 
-        else:
-            action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
-            action = action[0]
+        action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.state_inputs: state})
+        noise = ounoise()
 
-            for i in range(output_size):
-                if action[i] >= 0.5:
-                    action[i] -= 0.5
-                    action[i] *= 2
-
-                elif action[i] < 0.5:
-                    action[i] *= (-2)
-
-                print('action: ', action)
-
-        #action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
+        action += noise
+        action = np.clip(action, -1, 1)
+        action = action[0]
 
         next_state, reward, done, info = env.step(action)
-        print('reward:', reward)
+        #print('reward:', reward)
 
         totalreward += reward
         last_sequence = (state, action, reward, next_state, done)
@@ -139,7 +131,7 @@ def play_one(env, model, eps, gamma):
 
         state = next_state
 
-        if len(memory) > 50:
+        if len(memory) > 100:
             minibatch = random.sample(memory, minibatch_size)
 
             # Combined Experience Replay
@@ -160,6 +152,8 @@ def play_one(env, model, eps, gamma):
             env.render()
 
         if done:
+            # Re-iniitialize the random process when an episode ends
+            noise = np.ones(output_size) * mu
             break
 
 
@@ -180,46 +174,44 @@ def log_parameters():
     logfile.flush()
 
 def update_target_graph():
-    # Get the parameters of our DQNNetwork
-    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork")
+    # Get the parameters of our Network
+    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "network")
 
     # Get the parameters of our Target_network
-    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork_target")
+    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "network_target")
 
     op_holder = []
 
-    # Update our target_network parameters with DQNNetwork parameters
+    # Update our target_network parameters with Network parameters
     for from_var, to_var in zip(from_vars, to_vars):
         op_holder.append(to_var.assign(from_var))
 
     return op_holder
 
-class DQNet:
+def ounoise(noise = noise, mu=0, theta=0.15, sigma=0.5):
+    x = noise
+    dx = theta * (mu - x) + sigma * np.random.randn(len(x))
+    noise = x + dx
+
+    return noise
+
+class Net:
     def __init__(self, name, env=None, target=False, actor=False, critic=False):
         self.name = name
         self.env = env
 
         # Actor build
         if actor:
-            self.actor_inputs = tf.placeholder(tf.float32,[None, input_size], name="actor_inputs")
+            with tf.variable_scope(self.name):
+                self.state_inputs = tf.placeholder(tf.float32, [None, input_size], name="state_inputs")
 
-            self.actor_l1 = tf.layers.dense(self.actor_inputs, 1024, activation=tf.nn.relu)
+                self.q_gradient_inputs = tf.placeholder(tf.float32, [None, input_size])
 
-            self.actor_outputs = tf.layers.dense(self.actor_l1, 4, activation=tf.nn.sigmoid)
+                self.actor_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
 
-            #Training
-            self.actor_qvalue_input = tf.placeholder(tf.float32, [None, 1], name="actor_qvalue_input")
+                self.actor_l2 = tf.layers.dense(self.actor_l1, 512, activation=tf.nn.relu)
 
-
-            self.actor_corrected_action = tf.clip_by_value(tf.add(self.actor_outputs, self.actor_qvalue_input), -1, 1)
-
-
-            # self.actor_loss = tf.losses.hinge_loss(self.actor_outputs, self.actor_corrected_action)
-            self.actor_loss = tf.losses.huber_loss(self.actor_corrected_action, self.actor_outputs)
-
-            self.actor_train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.actor_loss)
-
-
+                self.actor_outputs = tf.layers.dense(self.actor_l2, 4, activation=tf.nn.tanh)
 
         # Critic build
         if critic:
@@ -260,7 +252,11 @@ class DQNet:
 
     def train(self, data, actor=False):
         if actor:
-            pass
+
+            self.parameters_gradients = tf.gradients(self.actor_outputs, self.state_inputs, -self.q_gradient_inputs)
+            self.optimizer = tf.train.AdamOptimizer(LEARNING_RATE).apply_gradients(
+                zip(self.parameters_gradients, self.net))
+
 
         else:
 
@@ -288,7 +284,7 @@ class DQNet:
 
                     target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
                     target_Qvalue = reward + gamma * target_prediction
-                    print('targetQ: ', target_Qvalue)
+                    #print('targetQ: ', target_Qvalue)
 
                 Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
 
@@ -297,36 +293,39 @@ class DQNet:
 
                 #TD error is positive if the transition from S to S′ gave a greater reward R than the critic expected, and negative if it was smaller than the critic expected
                 TDerror = target_Qvalue - Qvalue
-                # print('TDerror', TDerror)
-                TDerrors.append(TDerror)
+                print('TDerror', TDerror)
 
+                TDerrors.append(TDerror)
                 y.append(target_Qvalue)
 
             x = np.array(x).reshape(-1, input_size)
             y = np.array(y).reshape(-1, 1)
+            TDerrors = np.array(TDerrors).reshape(-1, 1)
 
             # Critic Training
             _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: x, self.critic_action_inputs: actions, self.target_Q: y})
 
             # Actor Training
-            _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs, nn_actor.actor_corrected_action], feed_dict={nn_actor.actor_inputs: x, nn_actor.actor_qvalue_input: y})
+            _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs, nn_actor.actor_corrected_action], feed_dict={nn_actor.actor_inputs: x, nn_actor.actor_qvalue_input: TDerrors})
             # print('Actor outputs', actor_outputs)
             # print('Qvalue', y)
             # print('Actor correct', actor_corrected_action)
-
 
 ###################FUNCTIONS&CLASSES############################################
 
 tf.reset_default_graph()
 
 # Instantiate Actor Network
-nn_actor = DQNet(name='nn_actor', env=env, actor=True)
+nn_actor = Net(name='nn_actor', env=env, actor=True)
 
-# Instantiate Critic DQNetwork
-nn_critic = DQNet(name='nn_critic', env=env, critic=True)
+# Instantiate Actor's Target Network
+nn_actor_target = Net(name='nn_actor_target', env=env, target=True, actor=True)
 
-# Instantiate Critic's Target DQNetwork
-nn_critic_target = DQNet(name='nn_critic_target', env=env, target=True, critic=True)
+# Instantiate Critic Network
+nn_critic = Net(name='nn_critic', env=env, critic=True)
+
+# Instantiate Critic's Target Network
+nn_critic_target = Net(name='nn_critic_target', env=env, target=True, critic=True)
 
 #saver = tf.train.Saver()
 
@@ -340,11 +339,8 @@ with tf.Session(config=config) as sess:
     for n in range(N):
         logfile.flush()
 
-        if eps > eps_min:
-            eps *= eps_decay
-
         # Play one game
-        totalreward = play_one(env, nn_actor, eps, gamma)
+        totalreward = play_one(env, nn_actor, gamma)
         totalrewards[n] = totalreward
 
         reward_avg_last35 = totalrewards[max(0, n - 35):(n + 1)].mean()
