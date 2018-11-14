@@ -117,7 +117,9 @@ def play_one(env, model, gamma):
 
         action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.state_inputs: state})
         noise = ounoise()
+        print('noise', noise)
 
+        # print('action', action)
         action += noise
         action = np.clip(action, -1, 1)
         action = action[0]
@@ -131,7 +133,7 @@ def play_one(env, model, gamma):
 
         state = next_state
 
-        if len(memory) > 100:
+        if len(memory) > 10000:
             minibatch = random.sample(memory, minibatch_size)
 
             # Combined Experience Replay
@@ -139,6 +141,8 @@ def play_one(env, model, gamma):
                 minibatch.append(last_sequence)
 
             nn_critic.train(minibatch)
+            nn_actor.train(minibatch)
+            exit()
 
         tau += 1
 
@@ -188,30 +192,40 @@ def update_target_graph():
 
     return op_holder
 
-def ounoise(noise = noise, mu=0, theta=0.15, sigma=0.5):
+def ounoise(mu=0, theta=0.15, sigma=0.5):
+    global noise
     x = noise
+    print('x', x)
     dx = theta * (mu - x) + sigma * np.random.randn(len(x))
     noise = x + dx
-
     return noise
+
 
 class Net:
     def __init__(self, name, env=None, target=False, actor=False, critic=False):
         self.name = name
         self.env = env
+        self.actor = actor
 
         # Actor build
         if actor:
             with tf.variable_scope(self.name):
                 self.state_inputs = tf.placeholder(tf.float32, [None, input_size], name="state_inputs")
 
-                self.q_gradient_inputs = tf.placeholder(tf.float32, [None, input_size])
-
                 self.actor_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
 
                 self.actor_l2 = tf.layers.dense(self.actor_l1, 512, activation=tf.nn.relu)
 
                 self.actor_outputs = tf.layers.dense(self.actor_l2, 4, activation=tf.nn.tanh)
+
+                if not target:
+                    self.q_gradient_inputs = tf.placeholder(tf.float32, [None, input_size])
+
+                    self.parameters_gradients = tf.gradients(self.actor_outputs, self.state_inputs,
+                                                             -self.q_gradient_inputs)
+                    # self.optimizer = tf.train.AdamOptimizer(lr).apply_gradients(
+                    #     zip(self.parameters_gradients, self.net))
+
 
         # Critic build
         if critic:
@@ -245,17 +259,13 @@ class Net:
                     # self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
                     # self.critic_train_op = self.optimizer.apply_gradients(self.capped_gvs)
 
+    def train(self, data):
+        if self.actor:
 
-    def predict(self, observation):
-        prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
-        return prediction
-
-    def train(self, data, actor=False):
-        if actor:
-
-            self.parameters_gradients = tf.gradients(self.actor_outputs, self.state_inputs, -self.q_gradient_inputs)
-            self.optimizer = tf.train.AdamOptimizer(LEARNING_RATE).apply_gradients(
-                zip(self.parameters_gradients, self.net))
+            # Actor Training
+            _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs],
+                                                                feed_dict={nn_actor.actor_inputs: x,
+                                                                           nn_actor.actor_qvalue_input: TDerrors})
 
 
         else:
@@ -263,7 +273,6 @@ class Net:
             x = []
             actions = []
             y = []
-            TDerrors = []
 
             for state, action, reward, next_state, done in data:
                 x.append(state)
@@ -280,36 +289,24 @@ class Net:
 
 
                 if not done:
-                    target_action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.actor_inputs: state})
+                    target_action = sess.run(nn_actor_target.actor_outputs, feed_dict={nn_actor_target.state_inputs: state})
 
                     target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
                     target_Qvalue = reward + gamma * target_prediction
-                    #print('targetQ: ', target_Qvalue)
+                    print('targetQ: ', target_Qvalue)
 
                 Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
 
-                # print('Qvalue', Qvalue)
-                # print('Qtarget', target_Qvalue)
-
-                #TD error is positive if the transition from S to S′ gave a greater reward R than the critic expected, and negative if it was smaller than the critic expected
-                TDerror = target_Qvalue - Qvalue
-                print('TDerror', TDerror)
-
-                TDerrors.append(TDerror)
                 y.append(target_Qvalue)
 
             x = np.array(x).reshape(-1, input_size)
             y = np.array(y).reshape(-1, 1)
-            TDerrors = np.array(TDerrors).reshape(-1, 1)
+
 
             # Critic Training
             _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: x, self.critic_action_inputs: actions, self.target_Q: y})
 
-            # Actor Training
-            _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs, nn_actor.actor_corrected_action], feed_dict={nn_actor.actor_inputs: x, nn_actor.actor_qvalue_input: TDerrors})
-            # print('Actor outputs', actor_outputs)
-            # print('Qvalue', y)
-            # print('Actor correct', actor_corrected_action)
+
 
 ###################FUNCTIONS&CLASSES############################################
 
