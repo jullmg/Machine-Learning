@@ -78,6 +78,7 @@ eps_min = 0.1
 
 minibatch_size = 32
 memory = deque(maxlen=500000)
+pre_train_steps = 100
 
 env = gym.make('BipedalWalker-v2')
 input_size = env.observation_space.shape[0] #24
@@ -117,9 +118,7 @@ def play_one(env, model, gamma):
 
         action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.state_inputs: state})
         noise = ounoise()
-        print('noise', noise)
 
-        # print('action', action)
         action += noise
         action = np.clip(action, -1, 1)
         action = action[0]
@@ -133,7 +132,7 @@ def play_one(env, model, gamma):
 
         state = next_state
 
-        if len(memory) > 10000:
+        if len(memory) > pre_train_steps:
             minibatch = random.sample(memory, minibatch_size)
 
             # Combined Experience Replay
@@ -141,8 +140,9 @@ def play_one(env, model, gamma):
                 minibatch.append(last_sequence)
 
             nn_critic.train(minibatch)
-            nn_actor.train(minibatch)
             exit()
+            nn_actor.train(minibatch)
+
 
         tau += 1
 
@@ -195,7 +195,6 @@ def update_target_graph():
 def ounoise(mu=0, theta=0.15, sigma=0.5):
     global noise
     x = noise
-    print('x', x)
     dx = theta * (mu - x) + sigma * np.random.randn(len(x))
     noise = x + dx
     return noise
@@ -259,17 +258,41 @@ class Net:
                     # self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
                     # self.critic_train_op = self.optimizer.apply_gradients(self.capped_gvs)
 
-    def train(self, data):
+    def train(self, minibatch):
         if self.actor:
 
             # Actor Training
             _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs],
                                                                 feed_dict={nn_actor.actor_inputs: x,
-                                                                           nn_actor.actor_qvalue_input: TDerrors})
-
-
+                                                                           nn_actor.q_gradient_inputs: TDerrors})
         else:
+            state_batch = np.asarray([data[0] for data in minibatch])
+            action_batch = np.asarray([data[1] for data in minibatch])
+            reward_batch = np.asarray([data[2] for data in minibatch])
+            next_state_batch = np.asarray([data[3] for data in minibatch])
+            done_batch = np.asarray([data[4] for data in minibatch])
 
+            next_action_batch = sess.run(nn_actor_target.actor_outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch})
+
+            q_value_batch = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state_batch, nn_critic_target.critic_action_inputs: next_action_batch})
+
+            # Discounted QValue (reward + gamma*Qvalue)
+            y_batch = []
+
+            # If done append reward only else append Discounted Qvalue
+            for i in range(len(minibatch)):
+                if done_batch[i]:
+                    y_batch.append(reward_batch[i])
+                else:
+                    y_batch.append(reward_batch[i] + gamma * q_value_batch[i])
+
+            state_batch = state_batch.reshape(-1, input_size)
+            action_batch = action_batch.reshape(-1, output_size)
+
+            # Train op
+            _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: state_batch, self.critic_action_inputs: action_batch, self.target_Q: y_batch})
+
+            '''
             x = []
             actions = []
             y = []
@@ -279,21 +302,17 @@ class Net:
                 actions.append(action)
                 target_Qvalue = reward
 
-
-                #print('reward', reward)
-
                 next_state = np.array(next_state).reshape(-1, input_size)
 
                 state = np.array(state).reshape(-1, input_size)
                 action = np.array(action).reshape(-1, output_size)
-
 
                 if not done:
                     target_action = sess.run(nn_actor_target.actor_outputs, feed_dict={nn_actor_target.state_inputs: state})
 
                     target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
                     target_Qvalue = reward + gamma * target_prediction
-                    print('targetQ: ', target_Qvalue)
+                    # print('targetQ: ', target_Qvalue)
 
                 Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
 
@@ -305,7 +324,7 @@ class Net:
 
             # Critic Training
             _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: x, self.critic_action_inputs: actions, self.target_Q: y})
-
+            '''
 
 
 ###################FUNCTIONS&CLASSES############################################
