@@ -78,7 +78,7 @@ eps_min = 0.1
 
 minibatch_size = 32
 memory = deque(maxlen=500000)
-pre_train_steps = 100
+pre_train_steps = 35
 
 env = gym.make('BipedalWalker-v2')
 input_size = env.observation_space.shape[0] #24
@@ -88,7 +88,7 @@ t0 = time.time()
 # Ornstein-Uhlenbeck (Random noise) process for action exploration
 mu=0
 theta=0.15
-sigma=0.5
+sigma=0.3
 noise = np.ones(output_size) * mu
 
 ###################FUNCTIONS&CLASSES############################################
@@ -116,7 +116,7 @@ def play_one(env, model, gamma):
 
         state = np.array(state).reshape(-1, input_size)
 
-        action = sess.run(nn_actor.actor_outputs, feed_dict={nn_actor.state_inputs: state})
+        action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})
         noise = ounoise()
 
         action += noise
@@ -139,9 +139,9 @@ def play_one(env, model, gamma):
             if CER:
                 minibatch.append(last_sequence)
 
-            nn_critic.train(minibatch)
+            train(minibatch)
             exit()
-            nn_actor.train(minibatch)
+
 
 
         tau += 1
@@ -199,149 +199,156 @@ def ounoise(mu=0, theta=0.15, sigma=0.5):
     noise = x + dx
     return noise
 
+def train(minibatch):
+    state_batch = np.asarray([data[0] for data in minibatch])
+    action_batch = np.asarray([data[1] for data in minibatch])
+    reward_batch = np.asarray([data[2] for data in minibatch])
+    next_state_batch = np.asarray([data[3] for data in minibatch])
+    done_batch = np.asarray([data[4] for data in minibatch])
 
-class Net:
-    def __init__(self, name, env=None, target=False, actor=False, critic=False):
+    next_action_batch = sess.run(nn_actor_target.outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch})
+
+    q_value_batch = sess.run(nn_critic_target.output, feed_dict={nn_critic_target.state_inputs: next_state_batch, nn_critic_target.action_inputs: next_action_batch})
+
+    # Discounted QValue (reward + gamma*Qvalue)
+    y_batch = []
+
+    # If done append reward only else append Discounted Qvalue
+    for i in range(len(minibatch)):
+        if done_batch[i]:
+            y_batch.append(reward_batch[i])
+        else:
+            y_batch.append(reward_batch[i] + gamma * q_value_batch[i])
+
+    state_batch = state_batch.reshape(-1, input_size)
+    action_batch = action_batch.reshape(-1, output_size)
+
+    y_batch = np.asarray(y_batch)
+    y_batch = y_batch.reshape(-1, 1)
+
+    # Train op
+    _, loss, outputs = sess.run([nn_critic.train_op, nn_critic.loss, nn_critic.output], feed_dict={nn_critic.state_inputs: state_batch, nn_critic.action_inputs: action_batch, nn_critic.target_Q: y_batch})
+
+    action_batch_for_grads = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state_batch})
+    q_gradient_batch = sess.run(nn_critic.action_gradients, feed_dict={
+            nn_critic.state_inputs: state_batch,
+            nn_critic.action_inputs: action_batch_for_grads
+        })[0]
+    # print(y_batch)
+    # print(q_gradient_batch)
+    exit()
+
+
+    '''
+    x = []
+    actions = []
+    y = []
+
+    for state, action, reward, next_state, done in data:
+        x.append(state)
+        actions.append(action)
+        target_Qvalue = reward
+
+        next_state = np.array(next_state).reshape(-1, input_size)
+
+        state = np.array(state).reshape(-1, input_size)
+        action = np.array(action).reshape(-1, output_size)
+
+        if not done:
+            target_action = sess.run(nn_actor_target.actor_outputs, feed_dict={nn_actor_target.state_inputs: state})
+
+            target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
+            target_Qvalue = reward + gamma * target_prediction
+            # print('targetQ: ', target_Qvalue)
+
+        Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
+
+        y.append(target_Qvalue)
+
+    x = np.array(x).reshape(-1, input_size)
+    y = np.array(y).reshape(-1, 1)
+
+
+    # Critic Training
+    _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: x, self.critic_action_inputs: actions, self.target_Q: y})
+    '''
+
+class ActorNet:
+    def __init__(self, name, env=None, target=False):
         self.name = name
         self.env = env
-        self.actor = actor
+        self.target = target
 
         # Actor build
-        if actor:
-            with tf.variable_scope(self.name):
-                self.state_inputs = tf.placeholder(tf.float32, [None, input_size], name="state_inputs")
+        with tf.variable_scope(self.name):
+            self.state_inputs = tf.placeholder(tf.float32, [None, input_size], name="state_inputs")
 
-                self.actor_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
+            self.actor_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
 
-                self.actor_l2 = tf.layers.dense(self.actor_l1, 512, activation=tf.nn.relu)
+            self.actor_l2 = tf.layers.dense(self.actor_l1, 512, activation=tf.nn.relu)
 
-                self.actor_outputs = tf.layers.dense(self.actor_l2, 4, activation=tf.nn.tanh)
+            self.outputs = tf.layers.dense(self.actor_l2, 4, activation=tf.nn.tanh)
 
-                if not target:
-                    self.q_gradient_inputs = tf.placeholder(tf.float32, [None, input_size])
+            # Training stage
+            if not target:
+                self.q_gradient_inputs = tf.placeholder(tf.float32, [None, input_size])
 
-                    self.parameters_gradients = tf.gradients(self.actor_outputs, self.state_inputs,
-                                                             -self.q_gradient_inputs)
-                    # self.optimizer = tf.train.AdamOptimizer(lr).apply_gradients(
-                    #     zip(self.parameters_gradients, self.net))
+                self.parameters_gradients = tf.gradients(self.outputs, self.state_inputs,
+                                                         -self.q_gradient_inputs)
 
+
+                # self.optimizer = tf.train.AdamOptimizer(lr).apply_gradients(
+                #     zip(self.parameters_gradients, self.net))
+
+class CriticNet:
+    def __init__(self, name, env=None, target=False):
+        self.name = name
+        self.env = env
 
         # Critic build
-        if critic:
-            with tf.variable_scope(self.name):
-                self.critic_state_inputs = tf.placeholder(tf.float32, [None, 24], name="critic_state_inputs")
 
-                self.critic_action_inputs = tf.placeholder(tf.float32, [None, 4], name="critic_action_inputs")
+        with tf.variable_scope(self.name):
+            self.state_inputs = tf.placeholder(tf.float32, [None, 24], name="critic_state_inputs")
 
-                self.critic_state_l1 = tf.layers.dense(self.critic_state_inputs, 1024, activation=tf.nn.relu)
+            self.action_inputs = tf.placeholder(tf.float32, [None, 4], name="critic_action_inputs")
 
-                self.critic_action_l1 = tf.layers.dense(self.critic_action_inputs, 1024, activation=tf.nn.relu)
+            self.state_l1 = tf.layers.dense(self.state_inputs, 1024, activation=tf.nn.relu)
 
-                self.mergedlayer = tf.concat([self.critic_state_l1, self.critic_action_l1], 1)
+            self.action_l1 = tf.layers.dense(self.action_inputs, 1024, activation=tf.nn.relu)
 
-                self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 2048, activation=tf.nn.relu)
+            self.mergedlayer = tf.concat([self.state_l1, self.action_l1], 1)
 
-                self.critic_output = tf.layers.dense(self.mergedlayer_l1, 1)
+            self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 2048, activation=tf.nn.relu)
 
-                if not target:
-                    # For training critic
-                    self.target_Q = tf.placeholder(tf.float32, [None, 1], name="target_Q")
+            self.output = tf.layers.dense(self.mergedlayer_l1, 1)
 
-                    #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-                    self.critic_loss = tf.losses.huber_loss(self.target_Q, self.critic_output)
+            if not target:
+                # Training stage
+                self.target_Q = tf.placeholder(tf.float32, [None, 1], name="target_Q")
 
-                    self.critic_train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.critic_loss)
+                #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
+                self.loss = tf.losses.huber_loss(self.target_Q, self.output)
 
-                    # Gradient Clipping -5,5
-                    # self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-                    # self.gvs = self.optimizer.compute_gradients(self.loss)
-                    # self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
-                    # self.critic_train_op = self.optimizer.apply_gradients(self.capped_gvs)
+                self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
-    def train(self, minibatch):
-        if self.actor:
-
-            # Actor Training
-            _, actor_outputs, actor_corrected_action = sess.run([nn_actor.actor_train_op, nn_actor.actor_outputs],
-                                                                feed_dict={nn_actor.actor_inputs: x,
-                                                                           nn_actor.q_gradient_inputs: TDerrors})
-        else:
-            state_batch = np.asarray([data[0] for data in minibatch])
-            action_batch = np.asarray([data[1] for data in minibatch])
-            reward_batch = np.asarray([data[2] for data in minibatch])
-            next_state_batch = np.asarray([data[3] for data in minibatch])
-            done_batch = np.asarray([data[4] for data in minibatch])
-
-            next_action_batch = sess.run(nn_actor_target.actor_outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch})
-
-            q_value_batch = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state_batch, nn_critic_target.critic_action_inputs: next_action_batch})
-
-            # Discounted QValue (reward + gamma*Qvalue)
-            y_batch = []
-
-            # If done append reward only else append Discounted Qvalue
-            for i in range(len(minibatch)):
-                if done_batch[i]:
-                    y_batch.append(reward_batch[i])
-                else:
-                    y_batch.append(reward_batch[i] + gamma * q_value_batch[i])
-
-            state_batch = state_batch.reshape(-1, input_size)
-            action_batch = action_batch.reshape(-1, output_size)
-
-            # Train op
-            _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: state_batch, self.critic_action_inputs: action_batch, self.target_Q: y_batch})
-
-            '''
-            x = []
-            actions = []
-            y = []
-
-            for state, action, reward, next_state, done in data:
-                x.append(state)
-                actions.append(action)
-                target_Qvalue = reward
-
-                next_state = np.array(next_state).reshape(-1, input_size)
-
-                state = np.array(state).reshape(-1, input_size)
-                action = np.array(action).reshape(-1, output_size)
-
-                if not done:
-                    target_action = sess.run(nn_actor_target.actor_outputs, feed_dict={nn_actor_target.state_inputs: state})
-
-                    target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
-                    target_Qvalue = reward + gamma * target_prediction
-                    # print('targetQ: ', target_Qvalue)
-
-                Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
-
-                y.append(target_Qvalue)
-
-            x = np.array(x).reshape(-1, input_size)
-            y = np.array(y).reshape(-1, 1)
-
-
-            # Critic Training
-            _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: x, self.critic_action_inputs: actions, self.target_Q: y})
-            '''
-
+                self.action_gradients = tf.gradients(self.output, self.action_inputs)
+                # self.action_gradients = tf.gradients(self.output, self.state_inputs)
 
 ###################FUNCTIONS&CLASSES############################################
 
 tf.reset_default_graph()
 
 # Instantiate Actor Network
-nn_actor = Net(name='nn_actor', env=env, actor=True)
+nn_actor = ActorNet(name='nn_actor', env=env)
 
 # Instantiate Actor's Target Network
-nn_actor_target = Net(name='nn_actor_target', env=env, target=True, actor=True)
+nn_actor_target = ActorNet(name='nn_actor_target', env=env, target=True)
 
 # Instantiate Critic Network
-nn_critic = Net(name='nn_critic', env=env, critic=True)
+nn_critic = CriticNet(name='nn_critic', env=env)
 
 # Instantiate Critic's Target Network
-nn_critic_target = Net(name='nn_critic_target', env=env, target=True, critic=True)
+nn_critic_target = CriticNet(name='nn_critic_target', env=env, target=True)
 
 #saver = tf.train.Saver()
 
