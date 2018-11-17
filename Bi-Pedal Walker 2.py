@@ -37,25 +37,27 @@ import os
 import random
 from collections import deque
 
-logfile_name = './testdelete.log'
-modelsave_name = './LunarLander_Models/LunarLander_Qlearn_sanspattes-01'
-modelload_name = './LunarLander_Models/LunarLander_Q_Learning_10-10'
-debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
+suffix = '01'
+logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
+modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
+modelload_name = './Bipedal_Models/Bipedal-{}-1000'.format(suffix)
+
+# debug_name = './Bipdeal_Logs/Bipedal_Debug.log'
 
 try:
     logfile = open(logfile_name, 'w')
-    debugfile = open(debug_name, 'w')
+    # debugfile = open(debug_name, 'w')
+
 except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
 logfile.write('\n')
 
-
-save_model = False
-load_model = False
+save_model = True
+load_model = True
 replay_count = 1000
-render = True
+render = False
 max_game_step = 650
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
@@ -72,6 +74,10 @@ lr_actor = 1e-4
 lr_critic = 1e-3
 N = 10000
 gamma = 0.99
+epochs = 1
+
+nn_dropout = False
+nn_dropout_factor = 0.95
 
 eps = 0.95
 eps_decay = 0.995
@@ -79,7 +85,7 @@ eps_min = 0.1
 
 minibatch_size = 32
 memory = deque(maxlen=500000)
-pre_train_steps = 35
+pre_train_steps = 1000
 
 env = gym.make('BipedalWalker-v2')
 input_size = env.observation_space.shape[0] #24
@@ -114,7 +120,6 @@ def play_one(env, model, gamma):
 
     # while not done:
     for t in range(max_game_step):
-
         state = np.array(state).reshape(-1, input_size)
 
         action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})
@@ -141,17 +146,14 @@ def play_one(env, model, gamma):
                 minibatch.append(last_sequence)
 
             train(minibatch)
-            exit()
-
-
 
         tau += 1
 
         if tau > tau_max:
-            update_target = update_target_graph()
-            sess.run(update_target)
+            update_target_actor, update_target_critic = update_target_graphs()
+            sess.run([update_target_actor, update_target_critic])
             tau = 0
-            print("Model updated")
+            print("Models updated")
 
         if render == True:
             env.render()
@@ -165,12 +167,37 @@ def play_one(env, model, gamma):
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
     return totalreward
 
+def replay(model, num):
+    totalrewards = np.empty(replay_count)
+
+    for game in range(num):
+        state = env.reset()
+        game_score = 0
+        done = False
+
+        while not done:
+            state = np.array(state).reshape(-1, input_size)
+
+            action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})[0]
+            print(action)
+
+            state, reward, done, info = env.step(action)
+            game_score += reward
+
+            env.render()
+
+        print('total game score: {}'.format(game_score))
+        totalrewards[game] = game_score
+        if game % 10 == 0 and game > 0:
+            output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
+            print(output)
+
 def log_parameters():
     #logfile.write(str(model.model.get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
+    logfile.write('\nEpochs: {}\nGamma: {}\nActor_Learning Rate: {}\n, Critic_Learning Rate: {}\n, MiniBatch_Size: {} \n'.format(epochs, gamma, lr_actor, lr_critic, minibatch_size))
     logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps, eps_decay))
-    logfile.write(
-        'Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
+    # logfile.write(
+    #     'Layer 1 : units: {} activation: {}\n'.format(nn_l1_units,nn_layer_1_activation))
     if nn_dropout:
         logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
     else:
@@ -178,20 +205,27 @@ def log_parameters():
 
     logfile.flush()
 
-def update_target_graph():
+def update_target_graphs():
     # Get the parameters of our Network
-    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "network")
+    from_vars_actor = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "nn_actor")
+    from_vars_critic = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "nn_critic")
 
     # Get the parameters of our Target_network
-    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "network_target")
+    to_vars_actor = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "nn_actor_target")
+    to_vars_critic = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "nn_critic_target")
 
-    op_holder = []
+    op_holder_actor = []
+    op_holder_critic = []
 
-    # Update our target_network parameters with Network parameters
-    for from_var, to_var in zip(from_vars, to_vars):
-        op_holder.append(to_var.assign(from_var))
+    # Update our Actor target_network parameters with Network parameters
+    for from_vars_actor, to_vars_actor in zip(from_vars_actor, to_vars_actor):
+        op_holder_actor.append(to_vars_actor.assign(from_vars_actor))
 
-    return op_holder
+    # Update our Critic target_network parameters with Network parameters
+    for from_vars_critic, to_vars_critic in zip(from_vars_critic, to_vars_critic):
+        op_holder_critic.append(to_vars_critic.assign(from_vars_critic))
+
+    return op_holder_actor, op_holder_critic
 
 def ounoise(mu=0, theta=0.15, sigma=0.5):
     global noise
@@ -291,7 +325,7 @@ class ActorNet:
 
             # Training stage
             if not target:
-                self.q_gradient_inputs = tf.placeholder(tf.float32, [None, input_size])
+                self.q_gradient_inputs = tf.placeholder(tf.float32, [None, output_size])
                 self.train_vars = tf.trainable_variables()
 
                 self.parameters_gradients = tf.gradients(self.outputs, self.train_vars,
@@ -351,11 +385,24 @@ nn_critic = CriticNet(name='nn_critic', env=env)
 # Instantiate Critic's Target Network
 nn_critic_target = CriticNet(name='nn_critic_target', env=env, target=True)
 
-#saver = tf.train.Saver()
+saver = tf.train.Saver()
+
+if load_model:
+    # Not worth using GPU for replaying model
+    config_replay = tf.ConfigProto(device_count={'GPU': 0})
+
+    with tf.Session(config=config_replay) as sess:
+        sess.run(tf.global_variables_initializer())
+
+        saver.restore(sess, modelload_name)
+
+        replay(nn_actor, replay_count)
+
+        exit()
 
 totalrewards = np.empty(N)
 
-#log_parameters()
+log_parameters()
 
 with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
@@ -370,7 +417,7 @@ with tf.Session(config=config) as sess:
         reward_avg_last35 = totalrewards[max(0, n - 35):(n + 1)].mean()
         reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
 
-        if n > 1 and n % 10 == 0:
+        if n > 1 and n % 50 == 0:
             if save_model:
                 saver.save(sess, modelsave_name, global_step=n)
 
