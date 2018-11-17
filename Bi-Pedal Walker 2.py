@@ -68,7 +68,8 @@ tau_max = 5000
 
 break_reward = 205
 
-lr = 0.001
+lr_actor = 1e-4
+lr_critic = 1e-3
 N = 10000
 gamma = 0.99
 
@@ -234,9 +235,8 @@ def train(minibatch):
             nn_critic.state_inputs: state_batch,
             nn_critic.action_inputs: action_batch_for_grads
         })[0]
-    # print(y_batch)
-    # print(q_gradient_batch)
-    exit()
+
+    sess.run(nn_actor.optimizer, feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch})
 
 
     '''
@@ -281,24 +281,25 @@ class ActorNet:
 
         # Actor build
         with tf.variable_scope(self.name):
-            self.state_inputs = tf.placeholder(tf.float32, [None, input_size], name="state_inputs")
+            self.state_inputs = tf.placeholder(tf.float32, [None, 24], name="state_inputs")
 
             self.actor_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
 
             self.actor_l2 = tf.layers.dense(self.actor_l1, 512, activation=tf.nn.relu)
 
-            self.outputs = tf.layers.dense(self.actor_l2, 4, activation=tf.nn.tanh)
+            self.outputs = tf.layers.dense(self.actor_l2, output_size, activation=tf.nn.tanh)
 
             # Training stage
             if not target:
                 self.q_gradient_inputs = tf.placeholder(tf.float32, [None, input_size])
+                self.train_vars = tf.trainable_variables()
 
-                self.parameters_gradients = tf.gradients(self.outputs, self.state_inputs,
+                self.parameters_gradients = tf.gradients(self.outputs, self.train_vars,
                                                          -self.q_gradient_inputs)
 
+                self.optimizer = tf.train.AdamOptimizer(lr_actor).apply_gradients(
+                     zip(self.parameters_gradients, self.train_vars))
 
-                # self.optimizer = tf.train.AdamOptimizer(lr).apply_gradients(
-                #     zip(self.parameters_gradients, self.net))
 
 class CriticNet:
     def __init__(self, name, env=None, target=False):
@@ -329,7 +330,7 @@ class CriticNet:
                 #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
                 self.loss = tf.losses.huber_loss(self.target_Q, self.output)
 
-                self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
+                self.train_op = tf.train.AdamOptimizer(learning_rate=lr_critic).minimize(self.loss)
 
                 self.action_gradients = tf.gradients(self.output, self.action_inputs)
                 # self.action_gradients = tf.gradients(self.output, self.state_inputs)
