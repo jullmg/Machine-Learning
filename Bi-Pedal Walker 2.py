@@ -37,10 +37,10 @@ import os
 import random
 from collections import deque
 
-suffix = '01'
+suffix = '03'
 logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal_Models/Bipedal-{}-1000'.format(suffix)
+modelload_name = './Bipedal_Models/Bipedal-{}-3100'.format(suffix)
 
 # debug_name = './Bipdeal_Logs/Bipedal_Debug.log'
 
@@ -52,10 +52,10 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('\n')
+logfile.write('Arrange nombre neurones egal\n')
 
 save_model = True
-load_model = True
+load_model = False
 replay_count = 1000
 render = False
 max_game_step = 650
@@ -68,8 +68,6 @@ CER = True
 tau = 0
 tau_max = 5000
 
-break_reward = 205
-
 lr_actor = 1e-4
 lr_critic = 1e-3
 N = 10000
@@ -78,10 +76,6 @@ epochs = 1
 
 nn_dropout = False
 nn_dropout_factor = 0.95
-
-eps = 0.95
-eps_decay = 0.995
-eps_min = 0.1
 
 minibatch_size = 32
 memory = deque(maxlen=500000)
@@ -95,7 +89,7 @@ t0 = time.time()
 # Ornstein-Uhlenbeck (Random noise) process for action exploration
 mu=0
 theta=0.15
-sigma=0.3
+sigma=0.5
 noise = np.ones(output_size) * mu
 
 ###################FUNCTIONS&CLASSES############################################
@@ -179,7 +173,7 @@ def replay(model, num):
             state = np.array(state).reshape(-1, input_size)
 
             action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})[0]
-            print(action)
+            # print(action)
 
             state, reward, done, info = env.step(action)
             game_score += reward
@@ -195,7 +189,7 @@ def replay(model, num):
 def log_parameters():
     #logfile.write(str(model.model.get_train_vars()))
     logfile.write('\nEpochs: {}\nGamma: {}\nActor_Learning Rate: {}\n, Critic_Learning Rate: {}\n, MiniBatch_Size: {} \n'.format(epochs, gamma, lr_actor, lr_critic, minibatch_size))
-    logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps, eps_decay))
+
     # logfile.write(
     #     'Layer 1 : units: {} activation: {}\n'.format(nn_l1_units,nn_layer_1_activation))
     if nn_dropout:
@@ -244,7 +238,7 @@ def train(minibatch):
     next_action_batch = sess.run(nn_actor_target.outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch})
 
     q_value_batch = sess.run(nn_critic_target.output, feed_dict={nn_critic_target.state_inputs: next_state_batch, nn_critic_target.action_inputs: next_action_batch})
-
+    print('q_value[0]', q_value_batch[0])
     # Discounted QValue (reward + gamma*Qvalue)
     y_batch = []
 
@@ -347,13 +341,13 @@ class CriticNet:
 
             self.action_inputs = tf.placeholder(tf.float32, [None, 4], name="critic_action_inputs")
 
-            self.state_l1 = tf.layers.dense(self.state_inputs, 1024, activation=tf.nn.relu)
+            self.state_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
 
-            self.action_l1 = tf.layers.dense(self.action_inputs, 1024, activation=tf.nn.relu)
+            self.action_l1 = tf.layers.dense(self.action_inputs, 256, activation=tf.nn.relu)
 
             self.mergedlayer = tf.concat([self.state_l1, self.action_l1], 1)
 
-            self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 2048, activation=tf.nn.relu)
+            self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 512, activation=tf.nn.relu)
 
             self.output = tf.layers.dense(self.mergedlayer_l1, 1)
 
@@ -424,9 +418,6 @@ with tf.Session(config=config) as sess:
             tx = time.time() - t0
             output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
             logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
-
-        if reward_avg_last35 >= break_reward:
-            break
 
 logfile.close()
 debugfile.close()
