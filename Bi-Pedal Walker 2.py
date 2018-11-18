@@ -40,7 +40,7 @@ from collections import deque
 suffix = '03'
 logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal_Models/Bipedal-{}-3100'.format(suffix)
+modelload_name = './Bipedal_Models/Bipedal-{}-8000'.format(suffix)
 
 # debug_name = './Bipdeal_Logs/Bipedal_Debug.log'
 
@@ -52,10 +52,10 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('Arrange nombre neurones egal\n')
+logfile.write('BatchSize 64 Noise 0.2\n')
 
 save_model = True
-load_model = False
+load_model = True
 replay_count = 1000
 render = False
 max_game_step = 650
@@ -63,7 +63,7 @@ max_game_step = 650
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
-CER = True
+CER = False
 
 tau = 0
 tau_max = 5000
@@ -77,10 +77,11 @@ epochs = 1
 nn_dropout = False
 nn_dropout_factor = 0.95
 
-minibatch_size = 32
+minibatch_size = 64
 memory = deque(maxlen=500000)
 pre_train_steps = 1000
 
+# env = gym.make('BipedalWalkerHardcore-v2')
 env = gym.make('BipedalWalker-v2')
 input_size = env.observation_space.shape[0] #24
 output_size = 4
@@ -89,7 +90,7 @@ t0 = time.time()
 # Ornstein-Uhlenbeck (Random noise) process for action exploration
 mu=0
 theta=0.15
-sigma=0.5
+sigma=0.2
 noise = np.ones(output_size) * mu
 
 ###################FUNCTIONS&CLASSES############################################
@@ -118,6 +119,7 @@ def play_one(env, model, gamma):
 
         action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})
         noise = ounoise()
+        # print('noise: ', noise)
 
         action += noise
         action = np.clip(action, -1, 1)
@@ -173,7 +175,7 @@ def replay(model, num):
             state = np.array(state).reshape(-1, input_size)
 
             action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})[0]
-            # print(action)
+            #print(action)
 
             state, reward, done, info = env.step(action)
             game_score += reward
@@ -221,7 +223,7 @@ def update_target_graphs():
 
     return op_holder_actor, op_holder_critic
 
-def ounoise(mu=0, theta=0.15, sigma=0.5):
+def ounoise(mu=0, theta=0.15, sigma=sigma):
     global noise
     x = noise
     dx = theta * (mu - x) + sigma * np.random.randn(len(x))
@@ -238,7 +240,7 @@ def train(minibatch):
     next_action_batch = sess.run(nn_actor_target.outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch})
 
     q_value_batch = sess.run(nn_critic_target.output, feed_dict={nn_critic_target.state_inputs: next_state_batch, nn_critic_target.action_inputs: next_action_batch})
-    print('q_value[0]', q_value_batch[0])
+    # print('q_value[0]', q_value_batch[0])
     # Discounted QValue (reward + gamma*Qvalue)
     y_batch = []
 
@@ -264,42 +266,9 @@ def train(minibatch):
             nn_critic.action_inputs: action_batch_for_grads
         })[0]
 
-    sess.run(nn_actor.optimizer, feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch})
-
-
-    '''
-    x = []
-    actions = []
-    y = []
-
-    for state, action, reward, next_state, done in data:
-        x.append(state)
-        actions.append(action)
-        target_Qvalue = reward
-
-        next_state = np.array(next_state).reshape(-1, input_size)
-
-        state = np.array(state).reshape(-1, input_size)
-        action = np.array(action).reshape(-1, output_size)
-
-        if not done:
-            target_action = sess.run(nn_actor_target.actor_outputs, feed_dict={nn_actor_target.state_inputs: state})
-
-            target_prediction = sess.run(nn_critic_target.critic_output, feed_dict={nn_critic_target.critic_state_inputs: next_state, nn_critic_target.critic_action_inputs: target_action})
-            target_Qvalue = reward + gamma * target_prediction
-            # print('targetQ: ', target_Qvalue)
-
-        Qvalue = sess.run(self.critic_output, feed_dict={self.critic_state_inputs: state, self.critic_action_inputs: action})
-
-        y.append(target_Qvalue)
-
-    x = np.array(x).reshape(-1, input_size)
-    y = np.array(y).reshape(-1, 1)
-
-
-    # Critic Training
-    _, loss, outputs = sess.run([self.critic_train_op, self.critic_loss, self.critic_output], feed_dict={self.critic_state_inputs: x, self.critic_action_inputs: actions, self.target_Q: y})
-    '''
+    _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars], feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch})
+    # print('par_grads', len(par_grads[3]))
+    # print(len(train_vars[3]))
 
 class ActorNet:
     def __init__(self, name, env=None, target=False):
