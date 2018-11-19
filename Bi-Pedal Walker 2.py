@@ -37,7 +37,7 @@ import os
 import random
 from collections import deque
 
-suffix = '03'
+suffix = '01'
 logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
 modelload_name = './Bipedal_Models/Bipedal-{}-8000'.format(suffix)
@@ -52,10 +52,12 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('BatchSize 64 Noise 0.2\n')
+logfile.write('Basic Setting\n')
 
 save_model = True
-load_model = True
+load_model = False
+
+
 replay_count = 1000
 render = False
 max_game_step = 650
@@ -71,6 +73,7 @@ tau_max = 5000
 lr_actor = 1e-4
 lr_critic = 1e-3
 N = 10000
+test_num = 10
 gamma = 0.99
 epochs = 1
 
@@ -79,7 +82,7 @@ nn_dropout_factor = 0.95
 
 minibatch_size = 64
 memory = deque(maxlen=500000)
-pre_train_steps = 1000
+pre_train_steps = 5000
 
 # env = gym.make('BipedalWalkerHardcore-v2')
 env = gym.make('BipedalWalker-v2')
@@ -149,7 +152,6 @@ def play_one(env, model, gamma):
             update_target_actor, update_target_critic = update_target_graphs()
             sess.run([update_target_actor, update_target_critic])
             tau = 0
-            print("Models updated")
 
         if render == True:
             env.render()
@@ -159,11 +161,9 @@ def play_one(env, model, gamma):
             noise = np.ones(output_size) * mu
             break
 
-
-    logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
     return totalreward
 
-def replay(model, num):
+def replay(model, num, test=False):
     totalrewards = np.empty(replay_count)
 
     for game in range(num):
@@ -177,21 +177,32 @@ def replay(model, num):
             action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})[0]
             #print(action)
 
-            state, reward, done, info = env.step(action)
+            state, reward, done, infow = env.step(action)
             game_score += reward
 
-            env.render()
+            if not test:
+                env.render()
 
-        print('total game score: {}'.format(game_score))
+        if test:
+            logfile.write('Score: {}\n'.format(game_score))
+            logfile.flush()
+        else:
+            print('Game {} score: {}'.format(game, game_score))
+
         totalrewards[game] = game_score
+        average_10 = totalrewards[max(0, game - 10):(game + 1)].mean()
+        output = 'Average score last 10: {}\n'.format(average_10)
+
         if game % 10 == 0 and game > 0:
-            output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
-            print(output)
+           print(output)
+
+    if test:
+        logfile.write(output)
+        logfile.flush()
 
 def log_parameters():
-    #logfile.write(str(model.model.get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nActor_Learning Rate: {}\n, Critic_Learning Rate: {}\n, MiniBatch_Size: {} \n'.format(epochs, gamma, lr_actor, lr_critic, minibatch_size))
-
+    logfile.write('\nEpochs: {}\nGamma: {}\nActor_Learning Rate: {}, Critic_Learning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr_actor, lr_critic, minibatch_size))
+    logfile.write('OU noise theta: {}\n'.format(theta))
     # logfile.write(
     #     'Layer 1 : units: {} activation: {}\n'.format(nn_l1_units,nn_layer_1_activation))
     if nn_dropout:
@@ -374,19 +385,21 @@ with tf.Session(config=config) as sess:
         logfile.flush()
 
         # Play one game
-        totalreward = play_one(env, nn_actor, gamma)
-        totalrewards[n] = totalreward
+        play_one(env, nn_actor, gamma)
 
         reward_avg_last35 = totalrewards[max(0, n - 35):(n + 1)].mean()
         reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
 
-        if n > 1 and n % 50 == 0:
+        if n > 1 and n % 10 == 0:
+            # Testing model
+            logfile.write('Testing from game {}\n'.format(n))
+            replay(nn_actor, test_num, test=True)
+
             if save_model:
                 saver.save(sess, modelsave_name, global_step=n)
 
             tx = time.time() - t0
-            output = 'Episode: ' + str(n) + "\navg reward (last 100): " + str(reward_avg_last100)
-            logfile.write('{}\nElapsed time : {}s\n\n'.format(output, round(tx, 2)))
+            logfile.write('Elapsed time : {}s\n\n'.format(round(tx, 2)))
 
 logfile.close()
 debugfile.close()
