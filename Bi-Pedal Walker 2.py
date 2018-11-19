@@ -37,10 +37,10 @@ import os
 import random
 from collections import deque
 
-suffix = '01'
+suffix = '03'
 logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal_Models/Bipedal-{}-8000'.format(suffix)
+modelload_name = './Bipedal_Models/Bipedal-{}-9500'.format(suffix)
 
 # debug_name = './Bipdeal_Logs/Bipedal_Debug.log'
 
@@ -52,10 +52,10 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('Basic Setting\n')
+logfile.write('Theta 0.25\n')
 
 save_model = True
-load_model = False
+load_model = True
 
 
 replay_count = 1000
@@ -92,7 +92,7 @@ t0 = time.time()
 
 # Ornstein-Uhlenbeck (Random noise) process for action exploration
 mu=0
-theta=0.15
+theta=0.25
 sigma=0.2
 noise = np.ones(output_size) * mu
 
@@ -199,6 +199,7 @@ def replay(model, num, test=False):
     if test:
         logfile.write(output)
         logfile.flush()
+        return average_10
 
 def log_parameters():
     logfile.write('\nEpochs: {}\nGamma: {}\nActor_Learning Rate: {}, Critic_Learning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr_actor, lr_critic, minibatch_size))
@@ -393,7 +394,10 @@ with tf.Session(config=config) as sess:
         if n > 1 and n % 10 == 0:
             # Testing model
             logfile.write('Testing from game {}\n'.format(n))
-            replay(nn_actor, test_num, test=True)
+            avg_scores = replay(nn_actor, test_num, test=True)
+
+            if avg_scores >= 300:
+                break
 
             if save_model:
                 saver.save(sess, modelsave_name, global_step=n)
