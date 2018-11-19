@@ -40,22 +40,23 @@ from collections import deque
 suffix = '03'
 logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal_Models/Bipedal-{}-9500'.format(suffix)
+modelload_name = './Bipedal_Models/Bipedal-{}-8800'.format(suffix)
+scoressave_name = './Bipedal_Logs/Score-{}.npy'.format(suffix)
 
-# debug_name = './Bipdeal_Logs/Bipedal_Debug.log'
+debug_name = './Bipedal_Logs/Bipedal_Debug.log'
+debugfile = open(debug_name, 'w')
 
 try:
     logfile = open(logfile_name, 'w')
-    # debugfile = open(debug_name, 'w')
 
 except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('Theta 0.25\n')
+logfile.write('\n')
 
 save_model = True
-load_model = True
+load_model = False
 
 
 replay_count = 1000
@@ -92,11 +93,12 @@ t0 = time.time()
 
 # Ornstein-Uhlenbeck (Random noise) process for action exploration
 mu=0
-theta=0.25
+theta=0.15
 sigma=0.2
 noise = np.ones(output_size) * mu
 
 ###################FUNCTIONS&CLASSES############################################
+
 
 def plot_moving_avg(totalrewards, qty):
     Num = len(totalrewards)
@@ -109,6 +111,7 @@ def plot_moving_avg(totalrewards, qty):
     #plt.draw()
     #plt.show()
     plt.show(block=False)
+
 
 def play_one(env, model, gamma):
     state = env.reset()
@@ -163,6 +166,7 @@ def play_one(env, model, gamma):
 
     return totalreward
 
+
 def replay(model, num, test=False):
     totalrewards = np.empty(replay_count)
 
@@ -201,9 +205,10 @@ def replay(model, num, test=False):
         logfile.flush()
         return average_10
 
+
 def log_parameters():
     logfile.write('\nEpochs: {}\nGamma: {}\nActor_Learning Rate: {}, Critic_Learning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr_actor, lr_critic, minibatch_size))
-    logfile.write('OU noise theta: {}\n'.format(theta))
+    logfile.write('OU noise theta: {}, sigma: {}\n'.format(theta, sigma))
     # logfile.write(
     #     'Layer 1 : units: {} activation: {}\n'.format(nn_l1_units,nn_layer_1_activation))
     if nn_dropout:
@@ -212,6 +217,7 @@ def log_parameters():
         logfile.write('No Dropout\n\n')
 
     logfile.flush()
+
 
 def update_target_graphs():
     # Get the parameters of our Network
@@ -235,12 +241,14 @@ def update_target_graphs():
 
     return op_holder_actor, op_holder_critic
 
+
 def ounoise(mu=0, theta=0.15, sigma=sigma):
     global noise
     x = noise
     dx = theta * (mu - x) + sigma * np.random.randn(len(x))
     noise = x + dx
     return noise
+
 
 def train(minibatch):
     state_batch = np.asarray([data[0] for data in minibatch])
@@ -281,6 +289,7 @@ def train(minibatch):
     _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars], feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch})
     # print('par_grads', len(par_grads[3]))
     # print(len(train_vars[3]))
+
 
 class ActorNet:
     def __init__(self, name, env=None, target=False):
@@ -346,6 +355,7 @@ class CriticNet:
 
 ###################FUNCTIONS&CLASSES############################################
 
+
 tf.reset_default_graph()
 
 # Instantiate Actor Network
@@ -381,6 +391,7 @@ log_parameters()
 
 with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
+    scores_for_graph = []
 
     for n in range(N):
         logfile.flush()
@@ -388,22 +399,23 @@ with tf.Session(config=config) as sess:
         # Play one game
         play_one(env, nn_actor, gamma)
 
-        reward_avg_last35 = totalrewards[max(0, n - 35):(n + 1)].mean()
-        reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
-
         if n > 1 and n % 10 == 0:
             # Testing model
             logfile.write('Testing from game {}\n'.format(n))
-            avg_scores = replay(nn_actor, test_num, test=True)
+            avg_score = replay(nn_actor, test_num, test=True)
 
-            if avg_scores >= 300:
-                break
+            scores_for_graph.append(avg_score)
+            saved_scores = np.array(scores_for_graph)
+            np.save(scoressave_name, saved_scores)
 
             if save_model:
                 saver.save(sess, modelsave_name, global_step=n)
 
             tx = time.time() - t0
             logfile.write('Elapsed time : {}s\n\n'.format(round(tx, 2)))
+
+            if avg_score >= 300:
+                break
 
 logfile.close()
 debugfile.close()
