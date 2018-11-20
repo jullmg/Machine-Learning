@@ -40,7 +40,7 @@ from collections import deque
 suffix = '03'
 logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal_Models/Bipedal-{}-8800'.format(suffix)
+modelload_name = './Bipedal_Models/Bipedal-{}-3910'.format(suffix)
 scoressave_name = './Bipedal_Logs/Score-{}.npy'.format(suffix)
 
 debug_name = './Bipedal_Logs/Bipedal_Debug.log'
@@ -56,7 +56,7 @@ except FileNotFoundError:
 logfile.write('\n')
 
 save_model = True
-load_model = False
+load_model = True
 
 
 replay_count = 1000
@@ -98,19 +98,6 @@ sigma=0.2
 noise = np.ones(output_size) * mu
 
 ###################FUNCTIONS&CLASSES############################################
-
-
-def plot_moving_avg(totalrewards, qty):
-    Num = len(totalrewards)
-    running_avg = np.empty(Num)
-    for t in range(Num):
-        running_avg[t] = totalrewards[max(0, t-qty):(t+1)].mean()
-
-    plt.plot(running_avg)
-    plt.title("Running Average")
-    #plt.draw()
-    #plt.show()
-    plt.show(block=False)
 
 
 def play_one(env, model, gamma):
@@ -179,7 +166,7 @@ def replay(model, num, test=False):
             state = np.array(state).reshape(-1, input_size)
 
             action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})[0]
-            #print(action)
+            # print(action)
 
             state, reward, done, infow = env.step(action)
             game_score += reward
@@ -209,6 +196,7 @@ def replay(model, num, test=False):
 def log_parameters():
     logfile.write('\nEpochs: {}\nGamma: {}\nActor_Learning Rate: {}, Critic_Learning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr_actor, lr_critic, minibatch_size))
     logfile.write('OU noise theta: {}, sigma: {}\n'.format(theta, sigma))
+    logfile.write('With CER\n') if CER else logfile.write('No CER\n')
     # logfile.write(
     #     'Layer 1 : units: {} activation: {}\n'.format(nn_l1_units,nn_layer_1_activation))
     if nn_dropout:
