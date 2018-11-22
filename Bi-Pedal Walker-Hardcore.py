@@ -37,13 +37,13 @@ import os
 import random
 from collections import deque
 
-suffix = '03'
-logfile_name = './Bipedal_Logs/Bipedal-{}.log'.format(suffix)
-modelsave_name = './Bipedal_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal_Models/Bipedal-{}-3890'.format(suffix)
-scoressave_name = './Bipedal_Logs/Score-{}.npy'.format(suffix)
+suffix = '02'
+logfile_name = './Bipedal-Hardcore_Logs/Bipedal-{}.log'.format(suffix)
+modelsave_name = './Bipedal-Hardcore_Models/Bipedal-{}'.format(suffix)
+modelload_name = './Bipedal-Hardcore_Models/Bipedal-{}-10000'.format(suffix)
+scoressave_name = './Bipedal-Hardcore_Logs/Score-{}.npy'.format(suffix)
 
-debug_name = './Bipedal_Logs/Bipedal_Debug.log'
+debug_name = './Bipedal-Hardcore_Logs/Bipedal_Debug.log'
 debugfile = open(debug_name, 'w')
 
 try:
@@ -53,27 +53,26 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('\n')
-
-save_model = True
 load_model = True
 
+if not load_model:
+    logfile.write('Basic Config\n')
 
 replay_count = 1000
 render = False
-max_game_step = 650
+
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
-CER = False
+CER = True
 
 tau = 0
 tau_max = 5000
 
 lr_actor = 1e-4
 lr_critic = 1e-3
-N = 10000
+N = 100000
 test_num = 10
 gamma = 0.99
 epochs = 1
@@ -82,10 +81,10 @@ nn_dropout = False
 nn_dropout_factor = 0.95
 
 minibatch_size = 64
-memory = deque(maxlen=500000)
+memory = deque(maxlen=750000)
 pre_train_steps = 5000
 
-env = gym.make('BipedalWalker-v2')
+env = gym.make('BipedalWalkerHardcore-v2')
 input_size = env.observation_space.shape[0] #24
 output_size = 4
 t0 = time.time()
@@ -105,8 +104,7 @@ def play_one(env, model, gamma):
     totalreward = 0
     global tau
 
-    # while not done:
-    for t in range(max_game_step):
+    while not done:
         state = np.array(state).reshape(-1, input_size)
 
         action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})
@@ -248,6 +246,7 @@ def train(minibatch):
 
     q_value_batch = sess.run(nn_critic_target.output, feed_dict={nn_critic_target.state_inputs: next_state_batch, nn_critic_target.action_inputs: next_action_batch})
     # print('q_value[0]', q_value_batch[0])
+
     # Discounted QValue (reward + gamma*Qvalue)
     y_batch = []
 
@@ -395,17 +394,16 @@ with tf.Session(config=config) as sess:
             saved_scores = np.array(scores_for_graph)
             np.save(scoressave_name, saved_scores)
 
-            # if save_model:
-            #     saver.save(sess, modelsave_name, global_step=n)
-
-            if avg_score >= 300:
-                saver.save(sess, modelsave_name, global_step=n)
-
             tx = time.time() - t0
             logfile.write('Elapsed time : {}s\n\n'.format(round(tx, 2)))
+
+            if avg_score >= 275:
+                saver.save(sess, modelsave_name, global_step=n)
+
+        if n > 1 and n % 1000 == 0:
+            saver.save(sess, modelsave_name, global_step=n)
 
 
 logfile.close()
 debugfile.close()
 env.close()
-sess.close()
