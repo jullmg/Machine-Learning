@@ -37,10 +37,10 @@ import os
 import random
 from collections import deque
 
-suffix = '02'
+suffix = '01'
 logfile_name = './Bipedal-Hardcore_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal-Hardcore_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal-Hardcore_Models/Bipedal-{}-10000'.format(suffix)
+modelload_name = './Bipedal-Hardcore_Models/Bipedal-{}-11660'.format(suffix)
 scoressave_name = './Bipedal-Hardcore_Logs/Score-{}.npy'.format(suffix)
 
 debug_name = './Bipedal-Hardcore_Logs/Bipedal_Debug.log'
@@ -56,7 +56,7 @@ except FileNotFoundError:
 load_model = True
 
 if not load_model:
-    logfile.write('Basic Config\n')
+    logfile.write('With Dropout\n')
 
 replay_count = 1000
 render = False
@@ -77,8 +77,9 @@ test_num = 10
 gamma = 0.99
 epochs = 1
 
-nn_dropout = False
-nn_dropout_factor = 0.95
+# Dropout
+nn_dropout = True
+keep_prob = 0.85
 
 minibatch_size = 64
 memory = deque(maxlen=750000)
@@ -197,7 +198,7 @@ def log_parameters():
     # logfile.write(
     #     'Layer 1 : units: {} activation: {}\n'.format(nn_l1_units,nn_layer_1_activation))
     if nn_dropout:
-        logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
+        logfile.write('Dropout on, keep prob: {}\n\n'.format(keep_prob))
     else:
         logfile.write('No Dropout\n\n')
 
@@ -264,7 +265,7 @@ def train(minibatch):
     y_batch = y_batch.reshape(-1, 1)
 
     # Train op
-    _, loss, outputs = sess.run([nn_critic.train_op, nn_critic.loss, nn_critic.output], feed_dict={nn_critic.state_inputs: state_batch, nn_critic.action_inputs: action_batch, nn_critic.target_Q: y_batch})
+    _, loss, outputs = sess.run([nn_critic.train_op, nn_critic.loss, nn_critic.output], feed_dict={nn_critic.state_inputs: state_batch, nn_critic.action_inputs: action_batch, nn_critic.target_Q: y_batch, nn_critic.keep_prob: keep_prob})
 
     action_batch_for_grads = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state_batch})
     q_gradient_batch = sess.run(nn_critic.action_gradients, feed_dict={
@@ -272,7 +273,7 @@ def train(minibatch):
             nn_critic.action_inputs: action_batch_for_grads
         })[0]
 
-    _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars], feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch})
+    _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars], feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch, nn_actor.keep_prob: keep_prob})
     # print('par_grads', len(par_grads[3]))
     # print(len(train_vars[3]))
 
@@ -286,10 +287,16 @@ class ActorNet:
         # Actor build
         with tf.variable_scope(self.name):
             self.state_inputs = tf.placeholder(tf.float32, [None, 24], name="state_inputs")
+            self.keep_prob = tf.placeholder(tf.float32)
+
 
             self.actor_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
 
+            self.dropout_l1 = tf.nn.dropout(self.actor_l1, keep_prob=self.keep_prob)
+
             self.actor_l2 = tf.layers.dense(self.actor_l1, 512, activation=tf.nn.relu)
+
+            self.dropout_l2 = tf.nn.dropout(self.actor_l2, keep_prob=self.keep_prob)
 
             self.outputs = tf.layers.dense(self.actor_l2, output_size, activation=tf.nn.tanh)
 
@@ -314,16 +321,19 @@ class CriticNet:
 
         with tf.variable_scope(self.name):
             self.state_inputs = tf.placeholder(tf.float32, [None, 24], name="critic_state_inputs")
-
             self.action_inputs = tf.placeholder(tf.float32, [None, 4], name="critic_action_inputs")
+            self.keep_prob = tf.placeholder(tf.float32)
 
             self.state_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
+            self.dropout_state_l1 = tf.nn.dropout(self.state_l1, keep_prob=self.keep_prob)
 
             self.action_l1 = tf.layers.dense(self.action_inputs, 256, activation=tf.nn.relu)
+            self.dropout_action_l1 = tf.nn.dropout(self.action_l1, keep_prob=self.keep_prob)
 
             self.mergedlayer = tf.concat([self.state_l1, self.action_l1], 1)
 
             self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 512, activation=tf.nn.relu)
+            self.dropout_mergedlayer = tf.nn.dropout(self.mergedlayer_l1, keep_prob=self.keep_prob)
 
             self.output = tf.layers.dense(self.mergedlayer_l1, 1)
 
@@ -397,11 +407,11 @@ with tf.Session(config=config) as sess:
             tx = time.time() - t0
             logfile.write('Elapsed time : {}s\n\n'.format(round(tx, 2)))
 
-            if avg_score >= 275:
+            if avg_score > 0:
                 saver.save(sess, modelsave_name, global_step=n)
 
-        if n > 1 and n % 1000 == 0:
-            saver.save(sess, modelsave_name, global_step=n)
+        # if n > 1 and n % 1000 == 0:
+        #     saver.save(sess, modelsave_name, global_step=n)
 
 
 logfile.close()
