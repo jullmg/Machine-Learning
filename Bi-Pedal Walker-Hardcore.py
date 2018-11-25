@@ -37,13 +37,14 @@ import os
 import random
 from collections import deque
 
-suffix = '01'
+suffix = '03'
 logfile_name = './Bipedal-Hardcore_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal-Hardcore_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal-Hardcore_Models/Bipedal-{}-11660'.format(suffix)
+modelload_name = './Bipedal-Hardcore_Models/Bipedal-{}-22320'.format(suffix)
 scoressave_name = './Bipedal-Hardcore_Logs/Score-{}.npy'.format(suffix)
+qvaluessave_name = './Bipedal-Hardcore_Logs/Qvalues-{}.npy'.format(suffix)
 
-debug_name = './Bipedal-Hardcore_Logs/Bipedal_Debug.log'
+debug_name = './Bipedal-Hardcore_Logs/Bipedal_Debug-{}.log'.format(suffix)
 debugfile = open(debug_name, 'w')
 
 try:
@@ -53,10 +54,12 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-load_model = True
+load_model = False
 
 if not load_model:
-    logfile.write('With Dropout\n')
+    init_msg = ''
+    logfile.write('{}, log number {}\n'.format(init_msg, suffix))
+    print(init_msg)
 
 replay_count = 1000
 render = False
@@ -102,24 +105,23 @@ noise = np.ones(output_size) * mu
 def play_one(env, model, gamma):
     state = env.reset()
     done = False
-    totalreward = 0
+    step = 0
+    q_values = []
     global tau
 
     while not done:
+        step += 1
         state = np.array(state).reshape(-1, input_size)
 
         action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})
         noise = ounoise()
-        # print('noise: ', noise)
 
         action += noise
         action = np.clip(action, -1, 1)
         action = action[0]
 
         next_state, reward, done, info = env.step(action)
-        #print('reward:', reward)
 
-        totalreward += reward
         last_sequence = (state, action, reward, next_state, done)
         memory.append(last_sequence)
 
@@ -132,7 +134,9 @@ def play_one(env, model, gamma):
             if CER:
                 minibatch.append(last_sequence)
 
-            train(minibatch)
+            q_value = train(minibatch)
+            q_values.append(q_value)
+            debugfile.write(''.format(q_values))
 
         tau += 1
 
@@ -145,11 +149,14 @@ def play_one(env, model, gamma):
             env.render()
 
         if done:
-            # Re-iniitialize the random process when an episode ends
+            # Re-initialize the random process when an episode ends
             noise = np.ones(output_size) * mu
             break
 
-    return totalreward
+    # Getting mean value of all qvalues in this game
+    q_values = np.array(q_values).mean()
+
+    return q_values
 
 
 def replay(model, num, test=False):
@@ -246,7 +253,7 @@ def train(minibatch):
     next_action_batch = sess.run(nn_actor_target.outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch})
 
     q_value_batch = sess.run(nn_critic_target.output, feed_dict={nn_critic_target.state_inputs: next_state_batch, nn_critic_target.action_inputs: next_action_batch})
-    # print('q_value[0]', q_value_batch[0])
+    q_value_batch_mean = np.array(q_value_batch).mean()
 
     # Discounted QValue (reward + gamma*Qvalue)
     y_batch = []
@@ -264,8 +271,9 @@ def train(minibatch):
     y_batch = np.asarray(y_batch)
     y_batch = y_batch.reshape(-1, 1)
 
-    # Train op
-    _, loss, outputs = sess.run([nn_critic.train_op, nn_critic.loss, nn_critic.output], feed_dict={nn_critic.state_inputs: state_batch, nn_critic.action_inputs: action_batch, nn_critic.target_Q: y_batch, nn_critic.keep_prob: keep_prob})
+    # Critic Train op
+    for i in range(epochs):
+        _, loss, outputs = sess.run([nn_critic.train_op, nn_critic.loss, nn_critic.output], feed_dict={nn_critic.state_inputs: state_batch, nn_critic.action_inputs: action_batch, nn_critic.target_Q: y_batch, nn_critic.keep_prob: keep_prob})
 
     action_batch_for_grads = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state_batch})
     q_gradient_batch = sess.run(nn_critic.action_gradients, feed_dict={
@@ -273,10 +281,11 @@ def train(minibatch):
             nn_critic.action_inputs: action_batch_for_grads
         })[0]
 
-    _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars], feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch, nn_actor.keep_prob: keep_prob})
-    # print('par_grads', len(par_grads[3]))
-    # print(len(train_vars[3]))
+    # Actor Train op
+    for i in range(epochs):
+        _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars], feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch, nn_actor.keep_prob: keep_prob})
 
+    return q_value_batch_mean
 
 class ActorNet:
     def __init__(self, name, env=None, target=False):
@@ -369,6 +378,7 @@ nn_critic_target = CriticNet(name='nn_critic_target', env=env, target=True)
 saver = tf.train.Saver()
 
 if load_model:
+    print('loading model', modelload_name )
     # Not worth using GPU for replaying model
     config_replay = tf.ConfigProto(device_count={'GPU': 0})
 
@@ -381,19 +391,20 @@ if load_model:
 
         exit()
 
-totalrewards = np.empty(N)
+# totalrewards = np.empty(N)
 
 log_parameters()
 
 with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
     scores_for_graph = []
+    qvalues_for_graph = []
 
     for n in range(N):
         logfile.flush()
 
         # Play one game
-        play_one(env, nn_actor, gamma)
+        q_values = play_one(env, nn_actor, gamma)
 
         if n > 1 and n % 10 == 0:
             # Testing model
@@ -401,8 +412,11 @@ with tf.Session(config=config) as sess:
             avg_score = replay(nn_actor, test_num, test=True)
 
             scores_for_graph.append(avg_score)
-            saved_scores = np.array(scores_for_graph)
+            qvalues_for_graph.append(q_values)
+
+            saved_scores, saved_qvalues = np.array(scores_for_graph), np.array(qvalues_for_graph)
             np.save(scoressave_name, saved_scores)
+            np.save(qvaluessave_name, saved_qvalues)
 
             tx = time.time() - t0
             logfile.write('Elapsed time : {}s\n\n'.format(round(tx, 2)))
