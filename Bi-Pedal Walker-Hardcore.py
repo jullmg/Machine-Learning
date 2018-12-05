@@ -1,20 +1,21 @@
 '''
-state = [
-self.hull.angle,        # Normal angles up to 0.5 here, but sure more is possible.
-2.0*self.hull.angularVelocity/FPS,
-0.3*vel.x*(VIEWPORT_W/SCALE)/FPS,  # Normalized to get -1..1 range
-0.3*vel.y*(VIEWPORT_H/SCALE)/FPS,
-self.joints[0].angle,   # This will give 1.1 on high up, but it's still OK (and there should be spikes on hiting the ground, that's normal too)
-self.joints[0].speed / SPEED_HIP,
-self.joints[1].angle + 1.0,
-self.joints[1].speed / SPEED_KNEE,
-1.0 if self.legs[1].ground_contact else 0.0,
-self.joints[2].angle,
-self.joints[2].speed / SPEED_HIP,
-self.joints[3].angle + 1.0,
-self.joints[3].speed / SPEED_KNEE,
-1.0 if self.legs[3].ground_contact else 0.0
-]
+state =
+1- self.hull.angle,        # Normal angles up to 0.5 here, but sure more is possible.
+2- 2.0*self.hull.angularVelocity/FPS,
+3- 0.3*vel.x*(VIEWPORT_W/SCALE)/FPS,  # Normalized to get -1..1 range
+4- 0.3*vel.y*(VIEWPORT_H/SCALE)/FPS,
+5- self.joints[0].angle,   # This will give 1.1 on high up, but it's still OK (and there should be spikes on hiting the ground, that's normal too)
+6- self.joints[0].speed / SPEED_HIP,
+7- self.joints[1].angle + 1.0,
+8- self.joints[1].speed / SPEED_KNEE,
+9- 1.0 if self.legs[1].ground_contact else 0.0,
+10- self.joints[2].angle,
+11- self.joints[2].speed / SPEED_HIP,
+12- self.joints[3].angle + 1.0,
+13- self.joints[3].speed / SPEED_KNEE,
+14- 1.0 if self.legs[3].ground_contact else 0.0
+15:24- Lidar readings
+
 
 
 self.joints[0].motorSpeed     = float(SPEED_HIP     * np.sign(action[0]))
@@ -25,9 +26,13 @@ self.joints[2].motorSpeed     = float(SPEED_HIP     * np.sign(action[2]))
 
 self.joints[3].motorSpeed     = float(SPEED_KNEE    * np.sign(action[3]))
 
-
-
 '''
+
+####################### TO DO ############################
+#
+#
+#
+####################### TO DO ############################
 
 import gym
 import numpy as np
@@ -37,10 +42,10 @@ import os
 import random
 from collections import deque
 
-suffix = '03'
+suffix = '02'
 logfile_name = './Bipedal-Hardcore_Logs/Bipedal-{}.log'.format(suffix)
 modelsave_name = './Bipedal-Hardcore_Models/Bipedal-{}'.format(suffix)
-modelload_name = './Bipedal-Hardcore_Models/Bipedal-{}-22320'.format(suffix)
+modelload_name = './Bipedal-Hardcore_Models/Bipedal-{}-12800'.format(suffix)
 scoressave_name = './Bipedal-Hardcore_Logs/Score-{}.npy'.format(suffix)
 qvaluessave_name = './Bipedal-Hardcore_Logs/Qvalues-{}.npy'.format(suffix)
 
@@ -54,12 +59,12 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-load_model = False
+load_model = True
 
 if not load_model:
-    init_msg = ''
+    init_msg = 'Noise sigma 0.5'
     logfile.write('{}, log number {}\n'.format(init_msg, suffix))
-    print(init_msg)
+    print('{}, suffix {}'.format(init_msg, suffix))
 
 replay_count = 1000
 render = False
@@ -96,7 +101,7 @@ t0 = time.time()
 # Ornstein-Uhlenbeck (Random noise) process for action exploration
 mu=0
 theta=0.15
-sigma=0.2
+sigma=0.5
 noise = np.ones(output_size) * mu
 
 ###################FUNCTIONS&CLASSES############################################
@@ -168,6 +173,8 @@ def replay(model, num, test=False):
         done = False
 
         while not done:
+            print(state[14:23])
+
             state = np.array(state).reshape(-1, input_size)
 
             action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})[0]
