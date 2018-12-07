@@ -3,14 +3,18 @@ import tensorflow as tf
 lr = 1e-3
 
 class Dense_NN:
-    def __init__(self):
+    def __init__(self, sess):
+        self.sess = sess
+
         self.input = tf.placeholder(tf.float32, [None, 784])
 
-        self.labels = tf.placeholder(tf.float32, [None, 10])
+        self.labels = tf.placeholder(tf.int8, [None, 10])
 
-        self.layer_1 = tf.layers.dense(input, 512, activation=tf.nn.sigmoid)
+        self.layer_1 = tf.layers.dense(self.input, 1024, activation=tf.nn.sigmoid)
 
-        self.output = tf.layers.dense(layer_1, 10, activation=tf.nn.sigmoid)
+        self.layer_2 = tf.layers.dense(self.layer_1, 2048, activation=tf.nn.sigmoid)
+
+        self.output = tf.layers.dense(self.layer_2, 10, activation=tf.nn.sigmoid)
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
 
@@ -20,5 +24,7 @@ class Dense_NN:
 
     def train(self, data):
         x_batch, y_batch = data
-        sess.run([self.train_op], feed_dict={self.input: data})
 
+        _, loss, output = self.sess.run([self.train_op, self.loss, self.output], feed_dict={self.input: x_batch, self.labels: y_batch})
+
+        return loss, output
