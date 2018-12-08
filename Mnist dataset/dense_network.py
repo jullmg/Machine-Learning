@@ -12,7 +12,7 @@ class Dense_NN:
 
         self.layer_1 = tf.layers.dense(self.input, 1024, activation=tf.nn.sigmoid)
 
-        self.layer_2 = tf.layers.dense(self.layer_1, 2048, activation=tf.nn.sigmoid)
+        self.layer_2 = tf.layers.dense(self.layer_1, 1024, activation=tf.nn.sigmoid)
 
         self.output = tf.layers.dense(self.layer_2, 10, activation=tf.nn.sigmoid)
 
@@ -22,9 +22,8 @@ class Dense_NN:
 
         self.train_op = self.optimizer.minimize(self.loss)
 
-    def train(self, data):
-        x_batch, y_batch = data
+    def train(self, x, y):
 
-        _, loss, output = self.sess.run([self.train_op, self.loss, self.output], feed_dict={self.input: x_batch, self.labels: y_batch})
+        _, loss, output = self.sess.run([self.train_op, self.loss, self.output], feed_dict={self.input: x, self.labels: y})
 
         return loss, output

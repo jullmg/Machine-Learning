@@ -5,12 +5,13 @@ from dense_network import Dense_NN
 
 batch_size = 50
 epoch = 5
-iteration = round(60000 / batch_size)
+
+# training set of 55,000 examples, and a test set of 10,000 examples
+mnist = input_data.read_data_sets("mnist_data", one_hot=True)
+
+iteration = round(mnist.train.num_examples / batch_size)
 
 sess = tf.Session()
-
-# training set of 60,000 examples, and a test set of 10,000 examples
-mnist = input_data.read_data_sets("mnist_data", one_hot=True)
 
 network = Dense_NN(sess)
 
@@ -20,8 +21,33 @@ for _ in range(epoch):
     for _ in range(iteration):
         # Return a tuple [0] = image [1] = label (answer)
         data = mnist.train.next_batch(batch_size)
-        loss, prediction = network.train(data)
+        x_data, y_data = data
+        loss, output = network.train(x_data, y_data)
+        # print(prediction[0])
+        # print(np.argmax(prediction[0]))
+        labels = []
+        predictions = []
+        good_guesses = 0
 
+        for i in output:
+            prediction = np.argmax(i)
+            predictions.append(prediction)
+
+        for i in y_data:
+            for index in range(10):
+                if i[index] == 1:
+                    label = index
+                    labels.append(label)
+
+        for i in range(batch_size):
+            if predictions[i] == labels[i]:
+                good_guesses += 1
+
+        accuracy = (good_guesses / batch_size)*100
+
+        # print('Predictions', predictions)
+        # print('Labels     ', labels)
+        print('Accuracy', accuracy)
 
 
 
