@@ -1,6 +1,8 @@
 import tensorflow as tf
+import numpy as np
 
 lr = 1e-3
+
 
 class Dense_NN:
     def __init__(self, sess):
@@ -23,7 +25,11 @@ class Dense_NN:
         self.train_op = self.optimizer.minimize(self.loss)
 
     def train(self, x, y):
-
         _, loss, output = self.sess.run([self.train_op, self.loss, self.output], feed_dict={self.input: x, self.labels: y})
 
         return loss, output
+
+    def test(self, x_test):
+        prediction = self.sess.run([self.output], feed_dict={self.input: x_test})
+
+        return np.argmax(prediction)
