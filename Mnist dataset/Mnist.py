@@ -3,8 +3,8 @@ import numpy as np
 from tensorflow.examples.tutorials.mnist import input_data
 from dense_network import Dense_NN
 
-batch_size = 50
-epoch_num = 2
+batch_size = 20
+epoch_num = 5
 
 # training set of 55,000 examples, and a test set of 10,000 examples
 mnist = input_data.read_data_sets("./mnist_data/", one_hot=True)
@@ -27,9 +27,9 @@ for epoch in range(epoch_num):
         # Return a tuple [0] = image [1] = label (answer)
         data = mnist.train.next_batch(batch_size)
         x_data, y_data = data
+
         loss, output = network.train(x_data, y_data)
-        # print(prediction[0])
-        # print(np.argmax(prediction[0]))
+
         labels = []
         predictions = []
         good_guesses = 0
@@ -53,10 +53,11 @@ for epoch in range(epoch_num):
         # print('Predictions', predictions)
         # print('Labels     ', labels)
         if iteration % 100 == 0:
-            print('Epoch: {}, Iteration: {}, Accuracy : {}'.format(epoch, iteration, accuracy))
+            print('Epoch: {}, Iteration: {}, Accuracy : {}'.format(epoch + 1, iteration, accuracy))
 
 # Testing phase
 num_tests = mnist.test.images.shape[0]
+good_guesses_test = 0
 
 print('Testing phase')
 print('Total Test Examples in Dataset = ' + str(num_tests))
@@ -70,8 +71,17 @@ for index in range(num_tests):
 
     test_prediction = network.test(x)
     test_answer = np.argmax(y_test[index])
-    # print('p: {} a: {}'.format(test_prediction, test_answer))
 
+    # print('p: {} a: {}'.format(test_prediction, test_answer))
+    if test_prediction == test_answer:
+        good_guesses_test += 1
+
+print('Test right answers', good_guesses_test)
+
+test_accuracy = round(good_guesses_test / num_tests * 100)
+error_rate = 100 - test_accuracy
+
+print('Test Accuracy = {}%\nError rate = {}%'.format(test_accuracy, error_rate))
 
 
 

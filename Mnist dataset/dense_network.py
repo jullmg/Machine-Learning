@@ -12,9 +12,9 @@ class Dense_NN:
 
         self.labels = tf.placeholder(tf.int8, [None, 10])
 
-        self.layer_1 = tf.layers.dense(self.input, 1024, activation=tf.nn.sigmoid)
+        self.layer_1 = tf.layers.dense(self.input, 256, activation=tf.nn.sigmoid)
 
-        self.layer_2 = tf.layers.dense(self.layer_1, 1024, activation=tf.nn.sigmoid)
+        self.layer_2 = tf.layers.dense(self.layer_1, 512, activation=tf.nn.sigmoid)
 
         self.output = tf.layers.dense(self.layer_2, 10, activation=tf.nn.sigmoid)
 
