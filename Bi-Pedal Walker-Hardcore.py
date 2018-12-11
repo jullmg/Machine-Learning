@@ -59,7 +59,7 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-load_model = True
+load_model = False
 
 if not load_model:
     init_msg = 'Noise sigma 0.5'
@@ -91,7 +91,7 @@ keep_prob = 0.85
 
 minibatch_size = 64
 memory = deque(maxlen=750000)
-pre_train_steps = 5000
+pre_train_steps = 2000
 
 env = gym.make('BipedalWalkerHardcore-v2')
 input_size = env.observation_space.shape[0] #24
@@ -118,7 +118,7 @@ def play_one(env, model, gamma):
         step += 1
         state = np.array(state).reshape(-1, input_size)
 
-        action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})
+        action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state, nn_actor.keep_prob: 1})
         noise = ounoise()
 
         action += noise
@@ -150,7 +150,7 @@ def play_one(env, model, gamma):
             sess.run([update_target_actor, update_target_critic])
             tau = 0
 
-        if render == True:
+        if render:
             env.render()
 
         if done:
@@ -173,11 +173,11 @@ def replay(model, num, test=False):
         done = False
 
         while not done:
-            print(state[14:23])
+            # print(state[14:23])
 
             state = np.array(state).reshape(-1, input_size)
 
-            action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state})[0]
+            action = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state, nn_actor.keep_prob: 1})[0]
             # print(action)
 
             state, reward, done, infow = env.step(action)
@@ -211,11 +211,8 @@ def log_parameters():
     logfile.write('With CER\n') if CER else logfile.write('No CER\n')
     # logfile.write(
     #     'Layer 1 : units: {} activation: {}\n'.format(nn_l1_units,nn_layer_1_activation))
-    if nn_dropout:
-        logfile.write('Dropout on, keep prob: {}\n\n'.format(keep_prob))
-    else:
-        logfile.write('No Dropout\n\n')
-
+    logfile.write('Dropout keep prob: {}\n\n'.format(keep_prob))
+    logfile.write('No Dropout\n\n')
     logfile.flush()
 
 
@@ -257,9 +254,12 @@ def train(minibatch):
     next_state_batch = np.asarray([data[3] for data in minibatch])
     done_batch = np.asarray([data[4] for data in minibatch])
 
-    next_action_batch = sess.run(nn_actor_target.outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch})
+    next_action_batch = sess.run(nn_actor_target.outputs, feed_dict={nn_actor_target.state_inputs: next_state_batch,
+                                                                     nn_actor_target.keep_prob: 1})
 
-    q_value_batch = sess.run(nn_critic_target.output, feed_dict={nn_critic_target.state_inputs: next_state_batch, nn_critic_target.action_inputs: next_action_batch})
+    q_value_batch = sess.run(nn_critic_target.output, feed_dict={nn_critic_target.state_inputs: next_state_batch,
+                                                                 nn_critic_target.action_inputs: next_action_batch,
+                                                                 nn_critic_target.keep_prob: 1})
     q_value_batch_mean = np.array(q_value_batch).mean()
 
     # Discounted QValue (reward + gamma*Qvalue)
@@ -280,19 +280,26 @@ def train(minibatch):
 
     # Critic Train op
     for i in range(epochs):
-        _, loss, outputs = sess.run([nn_critic.train_op, nn_critic.loss, nn_critic.output], feed_dict={nn_critic.state_inputs: state_batch, nn_critic.action_inputs: action_batch, nn_critic.target_Q: y_batch, nn_critic.keep_prob: keep_prob})
+        _, loss, outputs = sess.run([nn_critic.train_op, nn_critic.loss, nn_critic.output],
+                                    feed_dict={nn_critic.state_inputs: state_batch,
+                                               nn_critic.action_inputs: action_batch,
+                                               nn_critic.target_Q: y_batch, nn_critic.keep_prob: keep_prob})
 
-    action_batch_for_grads = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state_batch})
+    action_batch_for_grads = sess.run(nn_actor.outputs, feed_dict={nn_actor.state_inputs: state_batch,
+                                                                   nn_actor.keep_prob: 1})
     q_gradient_batch = sess.run(nn_critic.action_gradients, feed_dict={
             nn_critic.state_inputs: state_batch,
-            nn_critic.action_inputs: action_batch_for_grads
+            nn_critic.action_inputs: action_batch_for_grads, nn_critic.keep_prob: 1
         })[0]
 
     # Actor Train op
     for i in range(epochs):
-        _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars], feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs: q_gradient_batch, nn_actor.keep_prob: keep_prob})
+        _, par_grads, train_vars = sess.run([nn_actor.optimizer, nn_actor.parameters_gradients, nn_actor.train_vars],
+                                            feed_dict={nn_actor.state_inputs: state_batch, nn_actor.q_gradient_inputs:
+                                                       q_gradient_batch, nn_actor.keep_prob: keep_prob})
 
     return q_value_batch_mean
+
 
 class ActorNet:
     def __init__(self, name, env=None, target=False):
@@ -305,16 +312,15 @@ class ActorNet:
             self.state_inputs = tf.placeholder(tf.float32, [None, 24], name="state_inputs")
             self.keep_prob = tf.placeholder(tf.float32)
 
-
             self.actor_l1 = tf.layers.dense(self.state_inputs, 256, activation=tf.nn.relu)
 
             self.dropout_l1 = tf.nn.dropout(self.actor_l1, keep_prob=self.keep_prob)
 
-            self.actor_l2 = tf.layers.dense(self.actor_l1, 512, activation=tf.nn.relu)
+            self.actor_l2 = tf.layers.dense(self.dropout_l1, 512, activation=tf.nn.relu)
 
             self.dropout_l2 = tf.nn.dropout(self.actor_l2, keep_prob=self.keep_prob)
 
-            self.outputs = tf.layers.dense(self.actor_l2, output_size, activation=tf.nn.tanh)
+            self.outputs = tf.layers.dense(self.dropout_l2, output_size, activation=tf.nn.tanh)
 
             # Training stage
             if not target:
@@ -346,12 +352,12 @@ class CriticNet:
             self.action_l1 = tf.layers.dense(self.action_inputs, 256, activation=tf.nn.relu)
             self.dropout_action_l1 = tf.nn.dropout(self.action_l1, keep_prob=self.keep_prob)
 
-            self.mergedlayer = tf.concat([self.state_l1, self.action_l1], 1)
+            self.mergedlayer = tf.concat([self.dropout_state_l1, self.dropout_action_l1], 1)
 
-            self.mergedlayer_l1 =  tf.layers.dense(self.mergedlayer, 512, activation=tf.nn.relu)
+            self.mergedlayer_l1 = tf.layers.dense(self.mergedlayer, 512, activation=tf.nn.relu)
             self.dropout_mergedlayer = tf.nn.dropout(self.mergedlayer_l1, keep_prob=self.keep_prob)
 
-            self.output = tf.layers.dense(self.mergedlayer_l1, 1)
+            self.output = tf.layers.dense(self.dropout_mergedlayer, 1)
 
             if not target:
                 # Training stage
