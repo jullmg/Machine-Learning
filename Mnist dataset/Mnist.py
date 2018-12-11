@@ -3,8 +3,9 @@ import numpy as np
 from tensorflow.examples.tutorials.mnist import input_data
 from dense_network import Dense_NN
 
-batch_size = 20
-epoch_num = 5
+batch_size = 350
+epoch_num = 100
+dropout = 0.80
 
 # training set of 55,000 examples, and a test set of 10,000 examples
 mnist = input_data.read_data_sets("./mnist_data/", one_hot=True)
@@ -28,7 +29,7 @@ for epoch in range(epoch_num):
         data = mnist.train.next_batch(batch_size)
         x_data, y_data = data
 
-        loss, output = network.train(x_data, y_data)
+        loss, output = network.train(x_data, y_data, dropout)
 
         labels = []
         predictions = []
@@ -48,7 +49,7 @@ for epoch in range(epoch_num):
             if predictions[i] == labels[i]:
                 good_guesses += 1
 
-        accuracy = (good_guesses / batch_size)*100
+        accuracy = round(((good_guesses / batch_size)*100), 2)
 
         # print('Predictions', predictions)
         # print('Labels     ', labels)
