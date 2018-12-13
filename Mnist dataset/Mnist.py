@@ -2,10 +2,13 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.examples.tutorials.mnist import input_data
 from dense_network import Dense_NN
+from conv_network import Conv_NN
+
+use_conv = True
 
 batch_size = 350
 epoch_num = 100
-dropout = 0.80
+dropout = 1
 
 # training set of 55,000 examples, and a test set of 10,000 examples
 mnist = input_data.read_data_sets("./mnist_data/", one_hot=True)
@@ -17,7 +20,11 @@ iteration_num = round(mnist.train.num_examples / batch_size)
 
 sess = tf.Session()
 
-network = Dense_NN(sess)
+if use_conv:
+    network = Conv_NN(sess)
+else:
+    network = Dense_NN(sess)
+
 
 sess.run(tf.global_variables_initializer())
 
@@ -28,6 +35,9 @@ for epoch in range(epoch_num):
         # Return a tuple [0] = image [1] = label (answer)
         data = mnist.train.next_batch(batch_size)
         x_data, y_data = data
+
+        if use_conv:
+            x_data = np.reshape(x_data, [-1, 28, 28, 1])
 
         loss, output = network.train(x_data, y_data, dropout)
 

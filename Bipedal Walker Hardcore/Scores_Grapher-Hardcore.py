@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-suffix = '03'
+suffix = '02'
 suffix_2 = '03'
 
 scores_save_name = './Bipedal-Hardcore_Logs/Score-{}.npy'.format(suffix)
