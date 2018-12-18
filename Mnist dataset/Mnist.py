@@ -7,8 +7,12 @@ from conv_network import Conv_NN
 use_conv = True
 
 batch_size = 350
-epoch_num = 100
-dropout = 1
+epoch_num = 15
+dropout = 0.9
+
+# 1 to use gpu 0 to use CPU
+use_gpu = 1
+config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
 # training set of 55,000 examples, and a test set of 10,000 examples
 mnist = input_data.read_data_sets("./mnist_data/", one_hot=True)
@@ -18,7 +22,7 @@ mnist = input_data.read_data_sets("./mnist_data/", one_hot=True)
 
 iteration_num = round(mnist.train.num_examples / batch_size)
 
-sess = tf.Session()
+sess = tf.Session(config=config)
 
 if use_conv:
     network = Conv_NN(sess)
@@ -78,7 +82,10 @@ y_test = mnist.test.labels
 
 for index in range(num_tests):
     x = x_test[index]
-    x = np.reshape(x, [-1, 784])
+    if use_conv :
+        x = np.reshape(x, [-1, 28, 28, 1])
+    else:
+        x = np.reshape(x, [-1, 784])
 
     test_prediction = network.test(x)
     test_answer = np.argmax(y_test[index])
@@ -89,8 +96,8 @@ for index in range(num_tests):
 
 print('Test right answers', good_guesses_test)
 
-test_accuracy = round(good_guesses_test / num_tests * 100)
-error_rate = 100 - test_accuracy
+test_accuracy = round(good_guesses_test / num_tests * 100, 2)
+error_rate = round(100 - test_accuracy, 2)
 
 print('Test Accuracy = {}%\nError rate = {}%'.format(test_accuracy, error_rate))
 

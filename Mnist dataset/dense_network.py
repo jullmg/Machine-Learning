@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 
 lr = 1e-3
+activation = tf.nn.relu
 
 
 class Dense_NN:
@@ -12,15 +13,15 @@ class Dense_NN:
         self.labels = tf.placeholder(tf.int8, [None, 10])
         self.keep_prob = tf.placeholder(tf.float32)
 
-        self.layer_1 = tf.layers.dense(self.input, 256, activation=tf.nn.sigmoid)
+        self.layer_1 = tf.layers.dense(self.input, 256, activation=activation)
 
         self.dropout_layer_1 = tf.nn.dropout(self.layer_1, keep_prob=self.keep_prob)
 
-        self.layer_2 = tf.layers.dense(self.dropout_layer_1, 512, activation=tf.nn.sigmoid)
+        self.layer_2 = tf.layers.dense(self.dropout_layer_1, 512, activation=activation)
 
         self.dropout_layer_2 = tf.nn.dropout(self.layer_2, keep_prob=self.keep_prob)
 
-        self.output = tf.layers.dense(self.dropout_layer_2, 10, activation=tf.nn.sigmoid)
+        self.output = tf.layers.dense(self.dropout_layer_2, 10)
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
 
