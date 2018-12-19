@@ -21,7 +21,7 @@ class Conv_NN:
 
         # Dense layer
         self.flat_l1 = tf.reshape(self.max_pool_l2, [-1, 7 * 7 * 64])
-        self.dense_layer = tf.layers.dense(self.flat_l1, 1024, activation=tf.nn.relu)
+        self.dense_layer = tf.layers.dense(self.flat_l1, 512, activation=tf.nn.relu)
         self.dropout = tf.nn.dropout(self.dense_layer, keep_prob=self.keep_prob)
 
         self.output = tf.layers.dense(self.dropout, 10)
