@@ -18,6 +18,7 @@ class ConvDQNet:
 
         with tf.variable_scope(self.name):
             self.input = tf.placeholder(tf.float32, [None, 3, 96, 96, 1], name="input")
+
             # Convolutional layer 1
             self.conv_l1 = tf.layers.conv3d(self.input, 32, [5, 5, 1], padding="same", activation=tf.nn.relu)
             self.max_pool_l1 = tf.layers.max_pooling3d(self.conv_l1, pool_size=[2, 2, 1], strides=2)
@@ -64,57 +65,60 @@ class ConvDQNet:
 
         for state, action, reward, next_state, done in data:
             x.append(state)
-            target_Qvalue = reward
-
-
-            #print('reward', reward)
+            target_qvalue = reward
 
             next_state = np.array(next_state).reshape(-1, 3, 96, 96, 1)
-
             state = np.array(state).reshape(-1, 3, 96, 96, 1)
 
             if not done:
-                #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
-                target_Qvalue = reward + gamma * np.max(self.sess.run(target_network.outputs, feed_dict={target_network.input:next_state})) # use np.amax?
-                print('target qvalue', target_Qvalue)
+                target_qvalue = reward + gamma * np.max(self.sess.run(target_network.outputs,
+                                                        feed_dict={target_network.input:next_state}))
 
-            #target_f = self.predict(state)
-            target_f = self.sess.run(self.outputs, feed_dict={self.input:state})
+            target_f = self.sess.run(self.outputs, feed_dict={self.input: state})
 
-            target_f[0][action] = target_Qvalue
+            target_f[0][action] = target_qvalue
 
             y.append(target_f)
 
         y = np.array(y).reshape(-1, 4)
-        x = np.array(x).reshape(-1, 8)
+        x = np.array(x).reshape(-1, 3, 96, 96, 1)
 
-        #print(sess.run(self.capped_gvs, feed_dict={self.input: x, self.target_Q: y}))
-        _, loss, target_Q, outputs = self.sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.input: x, self.target_Q: y})
-        # print(y)
-        #print(target_Q)
-        #print(outputs)
+        _, loss, target_Q, outputs = self.sess.run([self.train_op, self.loss, self.target_Q, self.outputs],
+                                                   feed_dict={self.input: x, self.target_Q: y})
 
     def sample_action(self, s, eps):
         s = np.array(s)
         s = s.reshape(-1, 3, 96, 96, 1)
 
         if np.random.random() < eps:
-            return self.env.action_space.sample()
+            raw_result = self.env.action_space.sample()
+
+            if raw_result[0] > 0:
+                raw_result = np.insert(raw_result, 0, 0)
+
+            else:
+                raw_result[0] = abs(raw_result[0])
+                raw_result = np.insert(raw_result, 1, 0)
+
+            train_data = raw_result
+            result = np.argmax(raw_result)
 
         else:
-            result = np.argmax(self.sess.run(self.outputs, feed_dict={self.input: s}))
-            action = [0, 0, 0]
+            train_data = self.sess.run(self.outputs, feed_dict={self.input: s})
+            result = np.argmax(train_data)
 
-            if result == 0:
-                action[0] = -1
-            elif result == 1:
-                action[0] = 1
-            elif result == 2:
-                action[1] = 1
-            elif result == 3:
-                action[2] = 1
+        action = [0, 0, 0]
 
-        return action
+        if result == 0:
+            action[0] = -1
+        elif result == 1:
+            action[0] = 1
+        elif result == 2:
+            action[1] = 1
+        elif result == 3:
+            action[2] = 1
+
+        return action, train_data
 
     def parameters(self):
         return nn_layer_1_units, nn_layer_1_activation, gamma

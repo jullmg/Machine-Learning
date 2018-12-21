@@ -44,7 +44,7 @@ load_model = False
 replay_count = 1000
 render = False
 # 1 to use gpu 0 to use CPU
-use_gpu = 0
+use_gpu = 1
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
 CER = True
@@ -64,12 +64,13 @@ lr = 0.001
 N = 1500
 
 eps = 1
-eps_decay = 0.995
+eps_decay = 0.992
 eps_min = 0.1
 
 # 20 semble optimal
-minibatch_size = 20
+minibatch_size = 5
 memory = deque(maxlen=500000)
+minibatch_trigger = 2000
 
 env = gym.make('CarRacing-v0')
 
@@ -99,16 +100,17 @@ def play_one(env, model, eps, gamma):
     global tau
 
     for step in range(env.spec.timestep_limit):
-        action = dqnetwork.sample_action(state, eps)
-
+        action, train_data = dqnetwork.sample_action(state, eps)
         next_state, reward, done, info = env.step(action)
-        totalreward += reward
         last_sequence = (state, action, reward, next_state, done)
+
+        totalreward += reward
+
         memory.append(last_sequence)
 
         state = next_state
 
-        if len(memory) > 500:
+        if len(memory) > minibatch_trigger:
             minibatch = random.sample(memory, minibatch_size)
 
             # Combined Experience Replay
@@ -132,9 +134,10 @@ def play_one(env, model, eps, gamma):
         if done:
             break
 
-
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
+
     return totalreward
+
 
 def replay(model, num):
     totalrewards = np.empty(replay_count)
@@ -161,7 +164,7 @@ def replay(model, num):
         totalrewards[game] = game_score
         if game % 10 == 0 and game > 0:
             output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
-            print(output)
+
 
 def log_parameters():
     #logfile.write(str(model.model.get_train_vars()))
@@ -175,10 +178,11 @@ def log_parameters():
         logfile.write('No Dropout\n\n')
 
     logfile.flush()
-
 # This function helps us to copy one set of variables to another
 # In our case we use it when we want to copy the parameters of DQN to Target_network
 # Thanks of the very good implementation of Arthur Juliani https://github.com/awjuliani
+
+
 def update_target_graph():
     # Get the parameters of our DQNNetwork
     from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "dqnetwork")
@@ -282,10 +286,8 @@ def update_target_graph():
 
 # Reset the graph
 
+
 tf.reset_default_graph()
-
-
-
 
 
 if load_model:
@@ -303,7 +305,6 @@ if load_model:
 
 totalrewards = np.empty(N)
 costs = np.empty(N)
-
 
 
 with tf.Session(config=config) as sess:
@@ -325,7 +326,6 @@ with tf.Session(config=config) as sess:
 
         if eps > eps_min:
             eps *= eps_decay
-            #eps = eps_factor / np.sqrt(n + 1)
 
         # Play one game
         totalreward = play_one(env, dqnetwork, eps, gamma)
@@ -345,9 +345,6 @@ with tf.Session(config=config) as sess:
         if reward_avg_last50 >= break_reward:
             break
 
-plot_moving_avg(totalrewards, 100)
-
 logfile.close()
-debugfile.close()
 env.close()
 sess.close()
