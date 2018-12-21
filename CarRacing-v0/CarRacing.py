@@ -67,8 +67,6 @@ eps = 1
 eps_decay = 0.995
 eps_min = 0.1
 
-gamma = 0.99
-
 # 20 semble optimal
 minibatch_size = 20
 memory = deque(maxlen=500000)
@@ -95,13 +93,13 @@ def plot_moving_avg(totalrewards, qty):
 
 def play_one(env, model, eps, gamma):
     state = env.reset()
+
     done = False
     totalreward = 0
     global tau
 
     for step in range(env.spec.timestep_limit):
         action = dqnetwork.sample_action(state, eps)
-
 
         next_state, reward, done, info = env.step(action)
         totalreward += reward
@@ -117,7 +115,7 @@ def play_one(env, model, eps, gamma):
             if CER:
                 minibatch.append(last_sequence)
 
-            dqnetwork.train(minibatch)
+            dqnetwork.train(minibatch, dqnetwork_target)
 
         tau += 1
 
@@ -319,7 +317,7 @@ with tf.Session(config=config) as sess:
 
     sess.run(tf.global_variables_initializer())
 
-    nn_layer_1_units, nn_layer_1_activation = dqnetwork.parameters()
+    nn_layer_1_units, nn_layer_1_activation, gamma = dqnetwork.parameters()
     log_parameters()
 
     for n in range(N):
