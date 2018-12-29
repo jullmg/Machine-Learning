@@ -16,6 +16,11 @@ class ConvDQNet:
         self.env = env
         self.sess = sess
 
+        #Debug data
+        self.target_qvalue = 0
+        self.reward = 0
+        self.network_output = 0
+
         with tf.variable_scope(self.name):
             self.input = tf.placeholder(tf.float32, [None, 3, 96, 96, 1], name="input")
 
@@ -56,27 +61,39 @@ class ConvDQNet:
         '''
 
     def predict(self, observation):
-        prediction = self.sess.run(self.outputs, feed_dict={self.input: observation})
-        return prediction
+        result = np.argmax(self.sess.run(self.outputs, feed_dict={self.input: observation}))
+
+        action = [0, 0, 0]
+
+        if result == 0:
+            action[0] = -1
+        elif result == 1:
+            action[0] = 1
+        elif result == 2:
+            action[1] = 1
+        elif result == 3:
+            action[2] = 1
+
+        return action
 
     def train(self, data, target_network):
         x = []
         y = []
 
-        for state, action, reward, next_state, done in data:
+        for state, action, self.reward, next_state, done in data:
             x.append(state)
-            target_qvalue = reward
+            self.target_qvalue = self.reward
 
             next_state = np.array(next_state).reshape(-1, 3, 96, 96, 1)
             state = np.array(state).reshape(-1, 3, 96, 96, 1)
 
             if not done:
-                target_qvalue = reward + gamma * np.max(self.sess.run(target_network.outputs,
-                                                        feed_dict={target_network.input:next_state}))
+                self.target_qvalue = self.reward + gamma * np.max(self.sess.run(target_network.outputs,
+                                                             feed_dict={target_network.input:next_state}))
 
             target_f = self.sess.run(self.outputs, feed_dict={self.input: state})
 
-            target_f[0][action] = target_qvalue
+            target_f[0][action] = self.target_qvalue
 
             y.append(target_f)
 
@@ -107,6 +124,8 @@ class ConvDQNet:
             train_data = self.sess.run(self.outputs, feed_dict={self.input: s})
             result = np.argmax(train_data)
 
+            self.network_output = train_data
+
         action = [0, 0, 0]
 
         if result == 0:
@@ -122,5 +141,8 @@ class ConvDQNet:
 
     def parameters(self):
         return nn_layer_1_units, nn_layer_1_activation, gamma
+
+    def debug(self):
+        return self.target_qvalue, self.reward, self.network_output
 
 

@@ -26,7 +26,7 @@ from conv_net import ConvDQNet
 script_num = '01'
 logfile_name = './CarRacing_Logs/CarRacing_{}.log'.format(script_num)
 modelsave_name = './CarRacing_Models/CarRacing_Qlearn_{}'.format(script_num)
-modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}'.format(script_num)
+modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}-110'.format(script_num)
 
 debug_name = './CarRacing_Logs/CarRacing_debug_01.log'
 
@@ -42,7 +42,9 @@ logfile.write('\n')
 save_model = True
 load_model = False
 replay_count = 1000
-render = False
+render = True
+debug = True
+
 # 1 to use gpu 0 to use CPU
 use_gpu = 1
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
@@ -63,14 +65,14 @@ break_reward = 999
 lr = 0.001
 N = 1500
 
-eps = 1
-eps_decay = 0.992
+eps = 0.9
+eps_decay = 0.975
 eps_min = 0.1
 
 # 20 semble optimal
-minibatch_size = 5
+minibatch_size = 12
 memory = deque(maxlen=500000)
-minibatch_trigger = 2000
+minibatch_trigger = 100
 
 env = gym.make('CarRacing-v0')
 
@@ -119,6 +121,13 @@ def play_one(env, model, eps, gamma):
 
             dqnetwork.train(minibatch, dqnetwork_target)
 
+        if debug:
+            target_qvalue, step_reward, network_output = dqnetwork.debug()
+            step_reward = round(step_reward, 2)
+
+            debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\n\n'.format(target_qvalue, step_reward, network_output))
+            debugfile.flush()
+
         tau += 1
 
 
@@ -148,14 +157,11 @@ def replay(model, num):
         done = False
 
         while not done:
-            if observation[6] == 1 and observation[7] == 1 and observation[4] < 0.18:
-                action = 0
-            else:
-                observation = observation.reshape(-1, 8)
-                action = np.argmax(model.predict(observation))
-                #action = np.argmax(sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: observation}))
-
+            observation = observation.reshape(-1, 3, 96, 96, 1)
+            action = model.predict(observation)
+            print(action)
             observation, reward, done, info = env.step(action)
+
             game_score += reward
 
             env.render()
@@ -198,90 +204,6 @@ def update_target_graph():
 
     return op_holder
 
-# class DQNet:
-#     def __init__(self, name, env=None, target=False):
-#         self.name = name
-#         self.env = env
-#
-#         with tf.variable_scope(self.name):
-#             self.inputs = tf.placeholder(tf.float32,[None, input_size], name="inputs")
-#
-#             self.hiddenlayer1 = tf.layers.dense(self.inputs, nn_layer_1_units, activation=tf.nn.relu)
-#
-#             self.outputs = tf.layers.dense(self.hiddenlayer1, output_size)
-#
-#             if not target:
-#                 self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
-#
-#                 #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-#                 self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
-#
-#                 #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
-#
-#                 # Gradient Clipping -5,5
-#                 self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-#                 self.gvs = self.optimizer.compute_gradients(self.loss)
-#                 self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
-#                 self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
-#
-#         '''
-#         self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-#         self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=0.05)
-#         self.train_op = self.optimizer.minimize(self.loss)
-#         '''
-#
-#     def predict(self, observation):
-#         prediction = sess.run(self.outputs, feed_dict={self.inputs: observation})
-#         return prediction
-#
-#     def train(self, data):
-#         x = []
-#         y = []
-#
-#         for state, action, reward, next_state, done in data:
-#             x.append(state)
-#             target_Qvalue = reward
-#
-#
-#             #print('reward', reward)
-#
-#             next_state = np.array(next_state).reshape(-1, 8)
-#
-#             state = np.array(state).reshape(-1, 8)
-#
-#             if not done:
-#                 #target = reward + gamma * np.max(self.predict(next_state))  # use np.amax?
-#                 target_Qvalue = reward + gamma * np.max(sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs:next_state})) # use np.amax?
-#                 #print('target', target)
-#
-#             #target_f = self.predict(state)
-#             target_f = sess.run(self.outputs, feed_dict={self.inputs:state})
-#
-#             target_f[0][action] = target_Qvalue
-#
-#             y.append(target_f)
-#
-#         y = np.array(y).reshape(-1, 4)
-#         x = np.array(x).reshape(-1, 8)
-#
-#         #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
-#         _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
-#         # print(y)
-#         #print(target_Q)
-#         #print(outputs)
-#
-#     def sample_action(self, s, eps):
-#         s = np.array(s).reshape(-1, 8)
-#         # np.random (0.01-0.99)
-#         #print(np.max(self.predict(s)))
-#
-#         if np.random.random() < eps:
-#             return self.env.action_space.sample()
-#         else:
-#             prediction = np.argmax(sess.run(self.outputs, feed_dict={self.inputs: s}))
-#
-#             return prediction
-
 ###################FUNCTIONS&CLASSES############################################
 
 # Reset the graph
@@ -289,23 +211,7 @@ def update_target_graph():
 
 tf.reset_default_graph()
 
-
-if load_model:
-    # Not worth using GPU for replaying model
-    config_replay = tf.ConfigProto(device_count={'GPU': 0})
-
-    with tf.Session(config=config_replay) as sess:
-        sess.run(tf.global_variables_initializer())
-
-        saver.restore(sess, modelload_name)
-
-        replay(dqnetwork, replay_count)
-
-        exit()
-
 totalrewards = np.empty(N)
-costs = np.empty(N)
-
 
 with tf.Session(config=config) as sess:
     # Instantiate DQNetwork
@@ -318,13 +224,26 @@ with tf.Session(config=config) as sess:
 
     sess.run(tf.global_variables_initializer())
 
-    nn_layer_1_units, nn_layer_1_activation, gamma = dqnetwork.parameters()
-    log_parameters()
+    if load_model:
+        # Not worth using GPU for replaying model
+        # config_replay = tf.ConfigProto(device_count={'GPU': 0})
+
+        sess.run(tf.global_variables_initializer())
+
+        saver.restore(sess, modelload_name)
+
+        replay(dqnetwork, replay_count)
+
+        exit()
+
+    else:
+        nn_layer_1_units, nn_layer_1_activation, gamma = dqnetwork.parameters()
+        log_parameters()
 
     for n in range(N):
         logfile.flush()
 
-        if eps > eps_min:
+        if eps > eps_min and len(memory) > minibatch_trigger:
             eps *= eps_decay
 
         # Play one game
