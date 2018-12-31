@@ -5,6 +5,7 @@ nn_layer_1_activation = 'relu'
 nn_layer_1_units = 512
 nn_output_activation = 'linear'
 output_size = 4
+kernel_initializer = tf.initializers.zeros
 
 lr = 1e-3
 gamma = 0.99
@@ -20,16 +21,17 @@ class ConvDQNet:
         self.target_qvalue = 0
         self.reward = 0
         self.network_output = 0
+        self.custom_value_1 = None
 
         with tf.variable_scope(self.name):
             self.input = tf.placeholder(tf.float32, [None, 3, 96, 96, 1], name="input")
 
             # Convolutional layer 1
-            self.conv_l1 = tf.layers.conv3d(self.input, 32, [5, 5, 1], padding="same", activation=tf.nn.relu)
+            self.conv_l1 = tf.layers.conv3d(self.input, 32, [5, 5, 1], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
             self.max_pool_l1 = tf.layers.max_pooling3d(self.conv_l1, pool_size=[2, 2, 1], strides=2)
 
             # Convolutional layer 2
-            self.conv_l2 = tf.layers.conv3d(self.max_pool_l1, 64, [5, 5, 1], padding="same", activation=tf.nn.relu)
+            self.conv_l2 = tf.layers.conv3d(self.max_pool_l1, 64, [5, 5, 1], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
             self.max_pool_l2 = tf.layers.max_pooling3d(self.conv_l2, pool_size=[1, 1, 1], strides=2)
 
             # Dense layer
@@ -82,6 +84,8 @@ class ConvDQNet:
 
         for state, action, self.reward, next_state, done in data:
             x.append(state)
+            action = np.argmax(action)
+
             self.target_qvalue = self.reward
 
             next_state = np.array(next_state).reshape(-1, 3, 96, 96, 1)
@@ -100,7 +104,7 @@ class ConvDQNet:
         y = np.array(y).reshape(-1, 4)
         x = np.array(x).reshape(-1, 3, 96, 96, 1)
 
-        _, loss, target_Q, outputs = self.sess.run([self.train_op, self.loss, self.target_Q, self.outputs],
+        _, loss, target_Q, outputs, self.custom_value_1 = self.sess.run([self.train_op, self.loss, self.target_Q, self.outputs, self.conv_l1],
                                                    feed_dict={self.input: x, self.target_Q: y})
 
     def sample_action(self, s, eps):
@@ -143,6 +147,6 @@ class ConvDQNet:
         return nn_layer_1_units, nn_layer_1_activation, gamma
 
     def debug(self):
-        return self.target_qvalue, self.reward, self.network_output
+        return self.target_qvalue, self.reward, self.network_output, np.shape(self.custom_value_1)
 
 

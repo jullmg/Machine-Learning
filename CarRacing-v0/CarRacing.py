@@ -50,7 +50,7 @@ use_gpu = 1
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
 CER = True
-
+tf.initializers.random_normal
 
 nn_dropout = False
 nn_dropout_factor = 0.95
@@ -72,7 +72,7 @@ eps_min = 0.1
 # 20 semble optimal
 minibatch_size = 12
 memory = deque(maxlen=500000)
-minibatch_trigger = 100
+minibatch_trigger = 1500
 
 env = gym.make('CarRacing-v0')
 
@@ -104,7 +104,7 @@ def play_one(env, model, eps, gamma):
     for step in range(env.spec.timestep_limit):
         action, train_data = dqnetwork.sample_action(state, eps)
         next_state, reward, done, info = env.step(action)
-        last_sequence = (state, action, reward, next_state, done)
+        last_sequence = (state, train_data, reward, next_state, done)
 
         totalreward += reward
 
@@ -115,6 +115,7 @@ def play_one(env, model, eps, gamma):
         if len(memory) > minibatch_trigger:
             minibatch = random.sample(memory, minibatch_size)
 
+
             # Combined Experience Replay
             if CER:
                 minibatch.append(last_sequence)
@@ -122,10 +123,10 @@ def play_one(env, model, eps, gamma):
             dqnetwork.train(minibatch, dqnetwork_target)
 
         if debug:
-            target_qvalue, step_reward, network_output = dqnetwork.debug()
+            target_qvalue, step_reward, network_output, custom_value_1 = dqnetwork.debug()
             step_reward = round(step_reward, 2)
 
-            debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\n\n'.format(target_qvalue, step_reward, network_output))
+            debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\nCustom Value 1: {}\n\n'.format(target_qvalue, step_reward, network_output, custom_value_1))
             debugfile.flush()
 
         tau += 1
