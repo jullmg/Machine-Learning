@@ -42,7 +42,7 @@ logfile.write('\n')
 save_model = True
 load_model = False
 replay_count = 1000
-render = True
+render = False
 debug = True
 
 # 1 to use gpu 0 to use CPU
@@ -72,7 +72,7 @@ eps_min = 0.1
 # 20 semble optimal
 minibatch_size = 12
 memory = deque(maxlen=500000)
-minibatch_trigger = 1500
+minibatch_trigger = 300
 
 env = gym.make('CarRacing-v0')
 
@@ -126,7 +126,8 @@ def play_one(env, model, eps, gamma):
             target_qvalue, step_reward, network_output, custom_value_1 = dqnetwork.debug()
             step_reward = round(step_reward, 2)
 
-            debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\nCustom Value 1: {}\n\n'.format(target_qvalue, step_reward, network_output, custom_value_1))
+            debugfile.write('Network output: {}\nReward: {}\n\n'.format(train_data, reward))
+            # debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\nCustom Value 1: {}\n\n'.format(target_qvalue, step_reward, network_output, custom_value_1))
             debugfile.flush()
 
         tau += 1

@@ -45,8 +45,8 @@ class ConvDQNet:
             if not target:
                 self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
-                #self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-                self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
+                self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
+                #self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
 
                 #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
@@ -111,8 +111,12 @@ class ConvDQNet:
         s = np.array(s)
         s = s.reshape(-1, 3, 96, 96, 1)
 
+        # Returns random floats in the half-open interval [0.0, 1.0).
         if np.random.random() < eps:
-            raw_result = self.env.action_space.sample()
+            if np.random.random() > 0.5:
+                raw_result = [0, 1, 0]
+            else:
+                raw_result = self.env.action_space.sample()
 
             if raw_result[0] > 0:
                 raw_result = np.insert(raw_result, 0, 0)
@@ -147,6 +151,6 @@ class ConvDQNet:
         return nn_layer_1_units, nn_layer_1_activation, gamma
 
     def debug(self):
-        return self.target_qvalue, self.reward, self.network_output, np.shape(self.custom_value_1)
+        return round(self.target_qvalue, 3), self.reward, self.network_output, np.shape(self.custom_value_1)
 
 
