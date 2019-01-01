@@ -26,7 +26,7 @@ from conv_net import ConvDQNet
 script_num = '01'
 logfile_name = './CarRacing_Logs/CarRacing_{}.log'.format(script_num)
 modelsave_name = './CarRacing_Models/CarRacing_Qlearn_{}'.format(script_num)
-modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}-110'.format(script_num)
+modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}-90'.format(script_num)
 
 debug_name = './CarRacing_Logs/CarRacing_debug_01.log'
 
@@ -50,7 +50,6 @@ use_gpu = 1
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
 CER = True
-tf.initializers.random_normal
 
 nn_dropout = False
 nn_dropout_factor = 0.95
@@ -60,7 +59,7 @@ tau_max = 5000
 
 epochs = 1
 
-break_reward = 999
+break_reward = 999999
 
 lr = 0.001
 N = 1500
@@ -103,6 +102,7 @@ def play_one(env, model, eps, gamma):
 
     for step in range(env.spec.timestep_limit):
         action, train_data = dqnetwork.sample_action(state, eps)
+        print('train data:', train_data)
         next_state, reward, done, info = env.step(action)
         last_sequence = (state, train_data, reward, next_state, done)
 
@@ -123,10 +123,15 @@ def play_one(env, model, eps, gamma):
             dqnetwork.train(minibatch, dqnetwork_target)
 
         if debug:
-            target_qvalue, step_reward, network_output, custom_value_1 = dqnetwork.debug()
+            target_qvalue, step_reward, network_output, custom_value_1, custom_value_2, \
+                custom_value_3 = dqnetwork.debug()
+
             step_reward = round(step_reward, 2)
 
-            debugfile.write('Network output: {}\nReward: {}\n\n'.format(train_data, reward))
+            debugfile.write('Network output: {}\nReward: {}\nCustom Value 1: {}\nCustom Value 2: {}\nCustom Value 3: {}\n\n'
+                            .format(train_data, reward, custom_value_1, custom_value_2, custom_value_3))
+
+
             # debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\nCustom Value 1: {}\n\n'.format(target_qvalue, step_reward, network_output, custom_value_1))
             debugfile.flush()
 
@@ -161,7 +166,6 @@ def replay(model, num):
         while not done:
             observation = observation.reshape(-1, 3, 96, 96, 1)
             action = model.predict(observation)
-            print(action)
             observation, reward, done, info = env.step(action)
 
             game_score += reward
