@@ -29,7 +29,7 @@ class ConvDQNet:
 
 
         with tf.variable_scope(self.name):
-            self.input = tf.placeholder(tf.float32, [None, 3, 96, 96, 1], name="input")
+            self.input = tf.placeholder(tf.float32, [None, 96, 96, 3, 1], name="input")
 
             # Convolutional layer 1
             self.conv_l1 = tf.contrib.layers.conv3d(self.input, 32, [5, 5, 3])
@@ -94,8 +94,8 @@ class ConvDQNet:
 
             self.target_qvalue = self.reward
 
-            next_state = np.array(next_state).reshape(-1, 3, 96, 96, 1)
-            state = np.array(state).reshape(-1, 3, 96, 96, 1)
+            next_state = np.array(next_state).reshape(-1, 96, 96, 3, 1)
+            state = np.array(state).reshape(-1, 96, 96, 3, 1)
 
             if not done:
                 self.target_qvalue = self.reward + gamma * np.max(self.sess.run(target_network.outputs,
@@ -108,7 +108,7 @@ class ConvDQNet:
             y.append(target_f)
 
         y = np.array(y).reshape(-1, 4)
-        x = np.array(x).reshape(-1, 3, 96, 96, 1)
+        x = np.array(x).reshape(-1, 96, 96, 3, 1)
 
         custom_1 = self.input
         custom_2 = self.conv_l1
@@ -120,7 +120,7 @@ class ConvDQNet:
 
     def sample_action(self, s, eps):
         s = np.array(s)
-        s = s.reshape(-1, 3, 96, 96, 1)
+        s = s.reshape(-1, 96, 96, 3, 1)
 
         # Returns random floats in the half-open interval [0.0, 1.0).
         if np.random.random() < eps:

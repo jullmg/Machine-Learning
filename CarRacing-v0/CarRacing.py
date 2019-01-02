@@ -95,7 +95,6 @@ def plot_moving_avg(totalrewards, qty):
 
 def play_one(env, model, eps, gamma):
     state = env.reset()
-    print(np.shape(state))
 
     done = False
     totalreward = 0
@@ -103,7 +102,7 @@ def play_one(env, model, eps, gamma):
 
     for step in range(env.spec.timestep_limit):
         action, train_data = dqnetwork.sample_action(state, eps)
-        # print('train data:', train_data)
+        print('train data:', train_data)
         next_state, reward, done, info = env.step(action)
         last_sequence = (state, train_data, reward, next_state, done)
 
