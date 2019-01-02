@@ -70,7 +70,7 @@ eps_min = 0.1
 
 # 20 semble optimal
 minibatch_size = 12
-memory = deque(maxlen=500000)
+memory = deque(maxlen=100000)
 minibatch_trigger = 300
 
 env = gym.make('CarRacing-v0')
@@ -101,10 +101,10 @@ def play_one(env, model, eps, gamma):
     global tau
 
     for step in range(env.spec.timestep_limit):
-        action, train_data = dqnetwork.sample_action(state, eps)
-        print('train data:', train_data)
+        action, netout = dqnetwork.sample_action(state, eps)
+        print('Network output (Actual state):', netout)
         next_state, reward, done, info = env.step(action)
-        last_sequence = (state, train_data, reward, next_state, done)
+        last_sequence = (state, action, reward, next_state, done)
 
         totalreward += reward
 
@@ -129,14 +129,12 @@ def play_one(env, model, eps, gamma):
             step_reward = round(step_reward, 2)
 
             debugfile.write('Network output: {}\nReward: {}\nCustom Value 1: {}\nCustom Value 2: {}\nCustom Value 3: {}\n\n'
-                            .format(train_data, reward, custom_value_1, custom_value_2, custom_value_3))
-
+                            .format(netout, reward, custom_value_1, custom_value_2, custom_value_3))
 
             # debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\nCustom Value 1: {}\n\n'.format(target_qvalue, step_reward, network_output, custom_value_1))
             debugfile.flush()
 
         tau += 1
-
 
         if tau > tau_max:
             update_target = update_target_graph()
@@ -164,7 +162,7 @@ def replay(model, num):
         done = False
 
         while not done:
-            observation = observation.reshape(-1, 3, 96, 96, 1)
+            observation = observation.reshape(-1, 96, 96, 3, 1)
             action = model.predict(observation)
             observation, reward, done, info = env.step(action)
 

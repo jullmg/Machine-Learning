@@ -8,6 +8,8 @@ output_size = 4
 
 # kernel_initializer = tf.initializers.zeros
 kernel_initializer = tf.contrib.layers.xavier_initializer()
+kernel_initializer =  tf.initializers.random_uniform(minval=0, maxval=0.000001)
+kernel_initializer =  tf.initializers.random_uniform(minval=0, maxval=0.000001)
 
 lr = 1e-3
 gamma = 0.99
@@ -90,7 +92,6 @@ class ConvDQNet:
 
         for state, action, self.reward, next_state, done in data:
             x.append(state)
-            action = np.argmax(action)
 
             self.target_qvalue = self.reward
 
@@ -124,7 +125,7 @@ class ConvDQNet:
 
         # Returns random floats in the half-open interval [0.0, 1.0).
         if np.random.random() < eps:
-            if np.random.random() > 0.5:
+            if np.random.random() > 999:
                 raw_result = [0, 0.001, 0]
             else:
                 raw_result = self.env.action_space.sample()
