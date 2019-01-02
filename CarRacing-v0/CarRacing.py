@@ -26,7 +26,7 @@ from conv_net import ConvDQNet
 script_num = '01'
 logfile_name = './CarRacing_Logs/CarRacing_{}.log'.format(script_num)
 modelsave_name = './CarRacing_Models/CarRacing_Qlearn_{}'.format(script_num)
-modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}-90'.format(script_num)
+modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}-80'.format(script_num)
 
 debug_name = './CarRacing_Logs/CarRacing_debug_01.log'
 
@@ -95,6 +95,7 @@ def plot_moving_avg(totalrewards, qty):
 
 def play_one(env, model, eps, gamma):
     state = env.reset()
+    print(np.shape(state))
 
     done = False
     totalreward = 0
@@ -102,7 +103,7 @@ def play_one(env, model, eps, gamma):
 
     for step in range(env.spec.timestep_limit):
         action, train_data = dqnetwork.sample_action(state, eps)
-        print('train data:', train_data)
+        # print('train data:', train_data)
         next_state, reward, done, info = env.step(action)
         last_sequence = (state, train_data, reward, next_state, done)
 

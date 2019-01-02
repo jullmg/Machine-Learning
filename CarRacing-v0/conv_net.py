@@ -32,8 +32,8 @@ class ConvDQNet:
             self.input = tf.placeholder(tf.float32, [None, 3, 96, 96, 1], name="input")
 
             # Convolutional layer 1
-            # self.conv_l1 = tf.contrib.layers.conv3d(self.input, 32, [5, 5, 1])
-            self.conv_l1 = tf.layers.conv3d(self.input, 32, [5, 5, 3], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
+            self.conv_l1 = tf.contrib.layers.conv3d(self.input, 32, [5, 5, 3])
+            # self.conv_l1 = tf.layers.conv3d(self.input, 32, [5, 5, 3], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
             self.max_pool_l1 = tf.layers.max_pooling3d(self.conv_l1, pool_size=[2, 2, 1], strides=2)
 
             # Convolutional layer 2
