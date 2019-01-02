@@ -33,15 +33,15 @@ class ConvDQNet:
 
             # Convolutional layer 1
             self.conv_l1 = tf.contrib.layers.conv3d(self.input, 32, [5, 5, 3])
+            self.max_pool_l1 = tf.layers.max_pooling3d(self.conv_l1, pool_size=[2, 2, 3], strides=2) # 48*48*1*32
             # self.conv_l1 = tf.layers.conv3d(self.input, 32, [5, 5, 3], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
-            self.max_pool_l1 = tf.layers.max_pooling3d(self.conv_l1, pool_size=[2, 2, 1], strides=2)
 
             # Convolutional layer 2
-            self.conv_l2 = tf.layers.conv3d(self.max_pool_l1, 64, [5, 5, 1], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
-            self.max_pool_l2 = tf.layers.max_pooling3d(self.conv_l2, pool_size=[1, 1, 1], strides=2)
+            self.conv_l2 = tf.layers.conv3d(self.max_pool_l1, 64, [4, 4, 1], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer) # 48*48*1*64
+            self.max_pool_l2 = tf.layers.max_pooling3d(self.conv_l2, pool_size=[2, 2, 1], strides=2) # 24*24*1*64
 
             # Dense layer
-            self.flat_l1 = tf.reshape(self.max_pool_l2, [-1, 36864])
+            self.flat_l1 = tf.reshape(self.max_pool_l2, [-1, 24*24*64])
 
             self.hiddenlayer1 = tf.layers.dense(self.flat_l1, nn_layer_1_units, activation=tf.nn.relu)
 
@@ -110,9 +110,9 @@ class ConvDQNet:
         y = np.array(y).reshape(-1, 4)
         x = np.array(x).reshape(-1, 96, 96, 3, 1)
 
-        custom_1 = self.input
-        custom_2 = self.conv_l1
-        custom_3 = self.max_pool_l1
+        custom_1 = self.max_pool_l1
+        custom_2 = self.conv_l2
+        custom_3 = self.max_pool_l2
 
         _, loss, target_Q, outputs, self.custom_value_1, self.custom_value_2, self.custom_value_3 = \
             self.sess.run([self.train_op, self.loss, self.target_Q, self.outputs, custom_1, custom_2, custom_3],
