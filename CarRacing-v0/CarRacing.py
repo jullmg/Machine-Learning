@@ -26,7 +26,7 @@ from conv_net import ConvDQNet
 script_num = '01'
 logfile_name = './CarRacing_Logs/CarRacing_{}.log'.format(script_num)
 modelsave_name = './CarRacing_Models/CarRacing_Qlearn_{}'.format(script_num)
-modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}-80'.format(script_num)
+modelload_name = './CarRacing_Models/CarRacing_Qlearn_{}-480'.format(script_num)
 
 debug_name = './CarRacing_Logs/CarRacing_debug_01.log'
 
@@ -64,14 +64,15 @@ break_reward = 999999
 lr = 0.001
 N = 1500
 
-eps = 0.9
-eps_decay = 0.975
+eps = 1
+# eps_decay = 0.975
+eps_decay = 0.998
 eps_min = 0.1
 
 # 20 semble optimal
-minibatch_size = 12
-memory = deque(maxlen=100000)
-minibatch_trigger = 300
+minibatch_size = 6
+memory = deque(maxlen=25000)
+minibatch_trigger = 600
 
 env = gym.make('CarRacing-v0')
 
@@ -102,9 +103,11 @@ def play_one(env, model, eps, gamma):
 
     for step in range(env.spec.timestep_limit):
         action, netout = dqnetwork.sample_action(state, eps)
-        print('Network output (Actual state):', netout)
-        next_state, reward, done, info = env.step(action)
-        last_sequence = (state, action, reward, next_state, done)
+        # print('Netout', netout)
+        action_index = np.argmax(netout)
+
+        next_state, reward, done, _ = env.step(action)
+        last_sequence = (state, action_index, reward, next_state, done)
 
         totalreward += reward
 
@@ -123,15 +126,16 @@ def play_one(env, model, eps, gamma):
             dqnetwork.train(minibatch, dqnetwork_target)
 
         if debug:
-            target_qvalue, step_reward, network_output, custom_value_1, custom_value_2, \
+            memory_action, target_qvalue, step_reward, network_output, custom_value_1, custom_value_2, \
                 custom_value_3 = dqnetwork.debug()
 
             step_reward = round(step_reward, 2)
 
-            debugfile.write('Network output: {}\nReward: {}\nCustom Value 1: {}\nCustom Value 2: {}\nCustom Value 3: {}\n\n'
-                            .format(netout, reward, custom_value_1, custom_value_2, custom_value_3))
+            # debugfile.write('Network output: {}\nReward: {}\nCustom Value 1: {}\nCustom Value 2: {}\nCustom Value 3: {}\n\n'
+            #                 .format(netout, reward, custom_value_1, custom_value_2, custom_value_3))
 
-            # debugfile.write('Target Q Value: {}\nReward: {}\nNetwork Output: {}\nCustom Value 1: {}\n\n'.format(target_qvalue, step_reward, network_output, custom_value_1))
+            debugfile.write('Target Q Value: {}\nReward: {}\nAction: {}\nNetwork Output: {}\nCustom Value 1: {}'
+                            '\n\n'.format(target_qvalue, step_reward, memory_action, network_output, custom_value_1))
             debugfile.flush()
 
         tau += 1
@@ -152,7 +156,6 @@ def play_one(env, model, eps, gamma):
 
     return totalreward
 
-
 def replay(model, num):
     totalrewards = np.empty(replay_count)
 
@@ -164,7 +167,7 @@ def replay(model, num):
         while not done:
             observation = observation.reshape(-1, 96, 96, 3, 1)
             action = model.predict(observation)
-            observation, reward, done, info = env.step(action)
+            observation, reward, done, _ = env.step(action)
 
             game_score += reward
 
@@ -173,15 +176,17 @@ def replay(model, num):
         print('total game score: {}'.format(game_score))
         totalrewards[game] = game_score
         if game % 10 == 0 and game > 0:
-            output = 'Episode: ' + str(game) + "\navg reward (last 100): " + str(totalrewards[max(0, game - 100):(game + 1)].mean())
+            output = 'Episode: ' + str(game) + "\navg reward (last 100): " + \
+                     str(totalrewards[max(0, game - 100):(game + 1)].mean())
 
 
 def log_parameters():
     #logfile.write(str(model.model.get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
-    logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps, eps_decay))
-    logfile.write(
-        'Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
+    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'
+                  .format(epochs, gamma, lr, minibatch_size))
+    logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'
+                  .format(eps, eps_decay))
+    logfile.write('Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
     if nn_dropout:
         logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
     else:

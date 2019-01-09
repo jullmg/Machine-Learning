@@ -7,9 +7,8 @@ nn_output_activation = 'linear'
 output_size = 4
 
 # kernel_initializer = tf.initializers.zeros
-kernel_initializer = tf.contrib.layers.xavier_initializer()
-kernel_initializer =  tf.initializers.random_uniform(minval=0, maxval=0.000001)
-kernel_initializer =  tf.initializers.random_uniform(minval=0, maxval=0.000001)
+# kernel_initializer = tf.contrib.layers.xavier_initializer()
+kernel_initializer = tf.initializers.random_uniform(minval=0, maxval=0.0001)
 
 lr = 1e-3
 gamma = 0.99
@@ -24,6 +23,7 @@ class ConvDQNet:
         #Debug data
         self.target_qvalue = 0
         self.reward = 0
+        self.action = 0
         self.network_output = 0
         self.custom_value_1 = None
         self.custom_value_2 = None
@@ -34,12 +34,12 @@ class ConvDQNet:
             self.input = tf.placeholder(tf.float32, [None, 96, 96, 3, 1], name="input")
 
             # Convolutional layer 1
-            self.conv_l1 = tf.contrib.layers.conv3d(self.input, 32, [5, 5, 3])
+            self.conv_l1 = tf.layers.conv3d(self.input, 32, [3, 3, 3], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
             self.max_pool_l1 = tf.layers.max_pooling3d(self.conv_l1, pool_size=[2, 2, 3], strides=2) # 48*48*1*32
-            # self.conv_l1 = tf.layers.conv3d(self.input, 32, [5, 5, 3], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer)
+            # self.conv_l1 = tf.contrib.layers.conv3d(self.input, 32, [5, 5, 3])
 
             # Convolutional layer 2
-            self.conv_l2 = tf.layers.conv3d(self.max_pool_l1, 64, [4, 4, 1], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer) # 48*48*1*64
+            self.conv_l2 = tf.layers.conv3d(self.max_pool_l1, 64, [3, 3, 1], padding="same", activation=tf.nn.relu, kernel_initializer=kernel_initializer) # 48*48*1*64
             self.max_pool_l2 = tf.layers.max_pooling3d(self.conv_l2, pool_size=[2, 2, 1], strides=2) # 24*24*1*64
 
             # Dense layer
@@ -54,21 +54,12 @@ class ConvDQNet:
                 self.target_Q = tf.placeholder(tf.float32, [None, output_size], name="target_Q")
 
                 self.loss = tf.losses.mean_squared_error(self.target_Q, self.outputs)
-                #self.loss = tf.losses.huber_loss(self.target_Q, self.outputs)
-
-                #self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
                 # Gradient Clipping -5,5
                 self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
                 self.gvs = self.optimizer.compute_gradients(self.loss)
                 self.capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in self.gvs]
                 self.train_op = self.optimizer.apply_gradients(self.capped_gvs)
-
-        '''
-        self.original_optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-        self.optimizer = tf.contrib.estimator.clip_gradients_by_norm(self.original_optimizer, clip_norm=0.05)
-        self.train_op = self.optimizer.minimize(self.loss)
-        '''
 
     def predict(self, observation):
         result = np.argmax(self.sess.run(self.outputs, feed_dict={self.input: observation}))
@@ -90,9 +81,8 @@ class ConvDQNet:
         x = []
         y = []
 
-        for state, action, self.reward, next_state, done in data:
+        for state, self.action, self.reward, next_state, done in data:
             x.append(state)
-
             self.target_qvalue = self.reward
 
             next_state = np.array(next_state).reshape(-1, 96, 96, 3, 1)
@@ -103,8 +93,7 @@ class ConvDQNet:
                                                              feed_dict={target_network.input:next_state}))
 
             target_f = self.sess.run(self.outputs, feed_dict={self.input: state})
-
-            target_f[0][action] = self.target_qvalue
+            target_f[0][self.action] = self.target_qvalue
 
             y.append(target_f)
 
@@ -125,10 +114,8 @@ class ConvDQNet:
 
         # Returns random floats in the half-open interval [0.0, 1.0).
         if np.random.random() < eps:
-            if np.random.random() > 999:
-                raw_result = [0, 0.001, 0]
-            else:
-                raw_result = self.env.action_space.sample()
+
+            raw_result = self.env.action_space.sample()
 
             if raw_result[0] > 0:
                 raw_result = np.insert(raw_result, 0, 0)
@@ -163,7 +150,7 @@ class ConvDQNet:
         return nn_layer_1_units, nn_layer_1_activation, gamma
 
     def debug(self):
-        return round(self.target_qvalue, 3), self.reward, self.network_output, np.shape(self.custom_value_1), \
+        return self.action, round(self.target_qvalue, 3), self.reward, self.network_output, np.shape(self.custom_value_1), \
                      np.shape(self.custom_value_2), np.shape(self.custom_value_3)
 
 

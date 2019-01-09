@@ -16,11 +16,12 @@ Actions :
 
 To do :
 Plot graphs
-Integrate dual deep network (target network)
-Integrate Combined Experience Replay (CER)
 Integrade Priorized Experience Replay (PER)
 
-Train steps?
+To try while training:
+
+    2 epochs
+    dropout
 
 '''
 
@@ -35,7 +36,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-script_name = 'avec-pattes-7'
+script_name = '05'
 logfile_name = './LunarLander_Logs/LunarLander_Qlearn_{}.log'.format(script_name)
 modelsave_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
 modelload_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
@@ -64,6 +65,7 @@ CER = True
 nn_layer_1_activation = 'relu'
 nn_layer_1_units = 512
 nn_output_activation = 'linear'
+
 nn_dropout = False
 nn_dropout_factor = 0.95
 
@@ -72,9 +74,12 @@ tau_max = 5000
 
 epochs = 1
 
-break_reward = 275
+# Break training when reaching this moving average (last 100)
+break_reward = 255
+# Save model when scoring this in this moving average (last 100)
+save_threshold = 190
 
-lr = 0.001
+lr = 1e-3
 N = 1500
 
 eps = 1
@@ -83,8 +88,10 @@ eps_min = 0.1
 
 gamma = 0.99
 
-# 20 semble optimal
 minibatch_size = 20
+# When memory reach this threshold, start training process
+minibatch_trigger = 600
+
 memory = deque(maxlen=500000)
 
 env = gym.make('LunarLander-v2')
@@ -115,14 +122,12 @@ def play_one(env, model, eps, gamma):
 
     for step in range(env.spec.timestep_limit):
 
-        if state[6] == 1 and state[7] == 1 and state[4] < 0.18:
-            action = 0
-        else:
-            action = dqnetwork.sample_action(state, eps)
+        # if state[6] == 1 and state[7] == 1 and state[4] < 0.18:
+        #     action = 0
+        # else:
+        #     action = dqnetwork.sample_action(state, eps)
 
-        # state = np.array(state).reshape(-1, 8)
-        # print('Network pred:', sess.run(dqnetwork.outputs, feed_dict={dqnetwork.inputs: state}))
-        # print('Target  pred:', sess.run(dqnetwork_target.outputs, feed_dict={dqnetwork_target.inputs: state}))
+        action = dqnetwork.sample_action(state, eps)
 
         next_state, reward, done, info = env.step(action)
         totalreward += reward
@@ -131,7 +136,7 @@ def play_one(env, model, eps, gamma):
 
         state = next_state
 
-        if len(memory) > 500:
+        if len(memory) > minibatch_trigger:
             minibatch = random.sample(memory, minibatch_size)
 
             # Combined Experience Replay
@@ -350,7 +355,7 @@ with tf.Session(config=config) as sess:
         reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
 
         if n > 1 and n % 10 == 0:
-            if save_model:
+            if save_model and reward_avg_last100 > save_threshold:
                 saver.save(sess, modelsave_name, global_step=n)
 
             tx = time.time() - t0
