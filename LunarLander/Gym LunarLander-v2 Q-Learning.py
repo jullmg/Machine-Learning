@@ -15,13 +15,14 @@ Actions :
         op, fire left engine, main engine, right engine
 
 To do :
-Plot graphs
+Plot multiple games in one graphs
 Integrade Priorized Experience Replay (PER)
 
 To try while training:
 
-    2 epochs
     dropout
+    2 epochs
+
 
 '''
 
@@ -36,10 +37,12 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-script_name = '05'
-logfile_name = './LunarLander_Logs/LunarLander_Qlearn_{}.log'.format(script_name)
-modelsave_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
-modelload_name = './LunarLander_Models/LunarLander_Qlearn_{}'.format(script_name)
+suffix = '04'
+logfile_name = './LunarLander_Logs/LunarLander_{}.log'.format(suffix)
+modelsave_name = './LunarLander_Models/LunarLander_{}'.format(suffix)
+modelload_name = './LunarLander_Models/LunarLander_{}'.format(suffix)
+scoressave_name = './LunarLander_Logs/Scores/Score-{}.npy'.format(suffix)
+qvaluessave_name = './LunarLander_Logs/Scores/Qvalues-{}.npy'.format(suffix)
 
 debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 
@@ -50,7 +53,7 @@ except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
     logfile = open(FileNotFoundError.filename, 'w')
 
-logfile.write('With PER\n')
+logfile.write('\n')
 
 save_model = True
 load_model = False
@@ -308,7 +311,7 @@ class DQNet:
 
 ###################FUNCTIONS&CLASSES############################################
 
-# Reset the graph
+# Reset the graphe
 tf.reset_default_graph()
 
 # Instantiate DQNetwork
@@ -339,6 +342,8 @@ log_parameters()
 
 with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
+    scores_for_graph = []
+    qvalues_for_graph = []
 
     for n in range(N):
         logfile.flush()
@@ -350,6 +355,11 @@ with tf.Session(config=config) as sess:
         # Play one game
         totalreward = play_one(env, dqnetwork, eps, gamma)
         totalrewards[n] = totalreward
+
+        scores_for_graph.append(totalreward)
+        scores_for_graph_np = np.array(scores_for_graph)
+
+        np.save(scoressave_name, scores_for_graph_np)
 
         reward_avg_last50 = totalrewards[max(0, n - 50):(n + 1)].mean()
         reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
