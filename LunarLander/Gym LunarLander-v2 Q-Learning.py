@@ -15,7 +15,8 @@ Actions :
         op, fire left engine, main engine, right engine
 
 To do :
-Plot multiple games in one graphs
+Graph : Graph Qvalue over time
+Loggin : Output hyper-parameters in a separate file
 Integrade Priorized Experience Replay (PER)
 
 To try while training:
@@ -37,8 +38,9 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-suffix = '04'
+suffix = '01'
 logfile_name = './LunarLander_Logs/LunarLander_{}.log'.format(suffix)
+parameters_name = './LunarLander_Logs/Hyper_Parameters.log'
 modelsave_name = './LunarLander_Models/LunarLander_{}'.format(suffix)
 modelload_name = './LunarLander_Models/LunarLander_{}'.format(suffix)
 scoressave_name = './LunarLander_Logs/Scores/Score-{}.npy'.format(suffix)
@@ -49,9 +51,9 @@ debug_name = './LunarLander_Logs/LunarLander_Qlearn_debug_01.log'
 try:
     logfile = open(logfile_name, 'w')
     debugfile = open(debug_name, 'w')
+    parameters_log = open(parameters_name, 'w')
 except FileNotFoundError:
     os.mknod(FileNotFoundError.filename)
-    logfile = open(FileNotFoundError.filename, 'w')
 
 logfile.write('\n')
 
@@ -195,17 +197,30 @@ def replay(model, num):
             print(output)
 
 def log_parameters():
-    #logfile.write(str(model.model.get_train_vars()))
-    logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
-    logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps, eps_decay))
-    logfile.write(
+
+    parameters_log.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
+    parameters_log.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps, eps_decay))
+    parameters_log.write(
         'Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
     if nn_dropout:
-        logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
+        parameters_log.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
     else:
-        logfile.write('No Dropout\n\n')
+        parameters_log.write('No Dropout\n\n')
 
-    logfile.flush()
+        parameters_log.flush()
+
+
+    # #logfile.write(str(model.model.get_train_vars()))
+    # logfile.write('\nEpochs: {}\nGamma: {}\nLearning Rate: {}\nMiniBatch_Size: {} \n'.format(epochs, gamma, lr, minibatch_size))
+    # logfile.write('Epsilon: {} (decay: {})\nOptimizer: Adam\nLoss Function: Huber loss\n'.format(eps, eps_decay))
+    # logfile.write(
+    #     'Layer 1 : units: {} activation: {}\n'.format(nn_layer_1_units,nn_layer_1_activation))
+    # if nn_dropout:
+    #     logfile.write('Dropout factor: {}\n\n'.format(nn_dropout_factor))
+    # else:
+    #     logfile.write('No Dropout\n\n')
+    #
+    # logfile.flush()
 
 # This function helps us to copy one set of variables to another
 # In our case we use it when we want to copy the parameters of DQN to Target_network
