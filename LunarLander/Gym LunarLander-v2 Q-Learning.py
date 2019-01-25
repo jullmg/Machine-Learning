@@ -38,7 +38,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 # Pre-flight parameters
-suffix = '01'
+suffix = '05'
 logfile_name = './LunarLander_Logs/LunarLander_{}.log'.format(suffix)
 parameters_name = './LunarLander_Logs/Hyper_Parameters.log'
 modelsave_name = './LunarLander_Models/LunarLander_{}'.format(suffix)
@@ -125,6 +125,8 @@ def play_one(env, model, eps, gamma):
     totalreward = 0
     global tau
 
+    target_q_total = 0
+
     for step in range(env.spec.timestep_limit):
 
         # if state[6] == 1 and state[7] == 1 and state[4] < 0.18:
@@ -148,7 +150,13 @@ def play_one(env, model, eps, gamma):
             if CER:
                 minibatch.append(last_sequence)
 
-            dqnetwork.train(minibatch)
+            # Train on the sampled minibatch. Returns mean of target Q values for stats
+            target_q = dqnetwork.train(minibatch)
+
+            target_q_total += target_q
+
+
+
 
         tau += 1
 
@@ -163,11 +171,11 @@ def play_one(env, model, eps, gamma):
             env.render()
 
         if done:
+            mean_target_q = target_q_total / step
             break
 
-
     logfile.write('Last game total reward: {}\n'.format(round(totalreward, 2)))
-    return totalreward
+    return totalreward, mean_target_q
 
 def replay(model, num):
     totalrewards = np.empty(replay_count)
@@ -308,14 +316,11 @@ class DQNet:
 
         #print(sess.run(self.capped_gvs, feed_dict={self.inputs: x, self.target_Q: y}))
         _, loss, target_Q, outputs = sess.run([self.train_op, self.loss, self.target_Q, self.outputs], feed_dict={self.inputs: x, self.target_Q: y})
-        # print(y)
-        #print(target_Q)
-        #print(outputs)
+
+        return target_Q.mean()
 
     def sample_action(self, s, eps):
         s = np.array(s).reshape(-1, 8)
-        # np.random (0.01-0.99)
-        #print(np.max(self.predict(s)))
 
         if np.random.random() < eps:
             return self.env.action_space.sample()
@@ -355,6 +360,7 @@ costs = np.empty(N)
 
 log_parameters()
 
+# Main Session
 with tf.Session(config=config) as sess:
     sess.run(tf.global_variables_initializer())
     scores_for_graph = []
@@ -363,18 +369,23 @@ with tf.Session(config=config) as sess:
     for n in range(N):
         logfile.flush()
 
+        # Decaying Epsilon if higher than minimum
         if eps > eps_min:
             eps *= eps_decay
             #eps = eps_factor / np.sqrt(n + 1)
 
-        # Play one game
-        totalreward = play_one(env, dqnetwork, eps, gamma)
+        # Play one game, returns stats for graphs
+        totalreward, target_q_value = play_one(env, dqnetwork, eps, gamma)
         totalrewards[n] = totalreward
 
         scores_for_graph.append(totalreward)
+        qvalues_for_graph.append(target_q_value)
+
         scores_for_graph_np = np.array(scores_for_graph)
+        qvalues_for_graph_np = np.array(qvalues_for_graph)
 
         np.save(scoressave_name, scores_for_graph_np)
+        np.save(qvaluessave_name, qvalues_for_graph_np)
 
         reward_avg_last50 = totalrewards[max(0, n - 50):(n + 1)].mean()
         reward_avg_last100 = totalrewards[max(0, n - 100):(n + 1)].mean()
