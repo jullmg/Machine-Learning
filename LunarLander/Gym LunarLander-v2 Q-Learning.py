@@ -24,6 +24,8 @@ To try while training:
     dropout
     2 epochs
 
+test 123
+
 
 '''
 
