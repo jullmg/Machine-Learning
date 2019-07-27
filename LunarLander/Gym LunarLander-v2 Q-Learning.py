@@ -60,11 +60,15 @@ logfile.write('\n')
 save_model = True
 load_model = False
 replay_count = 1000
-render = False
+render = True
+# Render every X games
+render_interval = 25
+
 # 1 to use gpu 0 to use CPU
 use_gpu = 0
 config = tf.ConfigProto(device_count={'GPU': use_gpu})
 
+# Combined Experience Replay (Appends last sequence to minibatch sample)
 CER = True
 
 nn_layer_1_activation = 'relu'
@@ -85,7 +89,7 @@ break_reward = 255
 save_threshold = 190
 
 lr = 1e-3
-N = 1500
+N = 3500
 
 eps = 1
 eps_decay = 0.995
@@ -119,7 +123,7 @@ def plot_moving_avg(totalrewards, qty):
     #plt.show()
     plt.show()
 
-def play_one(env, model, eps, gamma):
+def play_one(env, model, eps, gamma, game_index):
     state = env.reset()
     done = False
     totalreward = 0
@@ -167,7 +171,7 @@ def play_one(env, model, eps, gamma):
             tau = 0
             print("Model updated")
 
-        if render == True:
+        if render == True and game_index % render_interval == 0:
             env.render()
 
         if done:
@@ -369,13 +373,16 @@ with tf.Session(config=config) as sess:
     for n in range(N):
         logfile.flush()
 
+        if n % 25 == 0:
+            print('playing game {}'.format(n))
+
         # Decaying Epsilon if higher than minimum
         if eps > eps_min:
             eps *= eps_decay
             #eps = eps_factor / np.sqrt(n + 1)
 
         # Play one game, returns stats for graphs
-        totalreward, target_q_value = play_one(env, dqnetwork, eps, gamma)
+        totalreward, target_q_value = play_one(env, dqnetwork, eps, gamma, n)
         totalrewards[n] = totalreward
 
         scores_for_graph.append(totalreward)
